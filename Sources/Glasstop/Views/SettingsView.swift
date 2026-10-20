@@ -10,8 +10,13 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section("Sampling") {
-                Picker("Refresh interval", selection: binding(\.interval)) {
-                    ForEach(SamplerSettings.intervals, id: \.self) { Text(seconds($0)).tag($0) }
+                Stepper(value: binding(\.interval), in: SamplerSettings.intervalRange,
+                        step: SamplerSettings.intervalStep) {
+                    HStack {
+                        Text("Refresh interval")
+                        Spacer()
+                        Text(milliseconds(appState.samplerSettings.interval)).monospacedDigit()
+                    }
                 }
                 Picker("History length", selection: binding(\.historySeconds)) {
                     ForEach(SamplerSettings.historyLengths, id: \.self) { Text("\($0 / 60) min").tag($0) }
@@ -19,7 +24,7 @@ struct SettingsView: View {
                 Picker("Process list refresh", selection: binding(\.processInterval)) {
                     ForEach(SamplerSettings.processIntervals, id: \.self) { Text(seconds($0)).tag($0) }
                 }
-                Text("Faster refresh costs more CPU. 0.5 s and 1 s are the defaults.")
+                Text("10 ms steps (also the − / + arrows in the header). Faster refresh costs more CPU; 500 ms and 1 s are the defaults.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -52,6 +57,10 @@ struct SettingsView: View {
                     s[keyPath: keyPath] = value
                     appState.setSamplerSettings(s)
                 })
+    }
+
+    private func milliseconds(_ value: TimeInterval) -> String {
+        String(format: "%.0f ms", value * 1000)
     }
 
     private func seconds(_ value: TimeInterval) -> String {

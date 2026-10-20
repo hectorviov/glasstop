@@ -16,6 +16,8 @@ struct HistoryGraph: NSViewRepresentable {
     var gradient: Gradient = Palette.loadGradient
     var showsGrid = true
     var lineWidth: CGFloat = 1.3
+    /// Grows downward from the top edge (btop's mirrored GPU graph under the CPU one).
+    var inverted = false
     /// Seconds between samples; with `format`, enables a hover marker showing the exact value.
     var interval: TimeInterval = SamplerSettings.default.interval
     var format: ((Double) -> String)? = nil
@@ -25,7 +27,7 @@ struct HistoryGraph: NSViewRepresentable {
     func updateNSView(_ view: GraphLayerView, context: Context) {
         view.hover = format.map { format in (interval, format) }
         view.configure(values: values, capacity: capacity, range: range, gradient: gradient,
-                       showsGrid: showsGrid, lineWidth: lineWidth)
+                       showsGrid: showsGrid, lineWidth: lineWidth, inverted: inverted)
     }
 }
 
@@ -138,6 +140,7 @@ final class GraphLayerView: LayerHostView {
     private var gradient = Palette.loadGradient
     private var showsGrid = true
     private var lineWidth: CGFloat = 1.3
+    private var inverted = false
 
     private let grid = CAShapeLayer()
     private let fill = GradientShape(stroke: false)
@@ -214,7 +217,7 @@ final class GraphLayerView: LayerHostView {
         let px = CGFloat(i + offset) * step
         let span = max(range.upperBound - range.lowerBound, .ulpOfOne)
         let v = (min(max(values[i], range.lowerBound), range.upperBound) - range.lowerBound) / span
-        let py = lineWidth / 2 + (bounds.height - lineWidth) * CGFloat(v)
+        let py = y(forFraction: CGFloat(v))
 
         let path = CGMutablePath()
         path.move(to: CGPoint(x: px, y: 0))
@@ -239,9 +242,10 @@ final class GraphLayerView: LayerHostView {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
     func configure(values: [Double], capacity: Int, range: ClosedRange<Double>, gradient: Gradient,
-                   showsGrid: Bool, lineWidth: CGFloat) {
+                   showsGrid: Bool, lineWidth: CGFloat, inverted: Bool) {
         guard values != self.values || capacity != self.capacity || range != self.range
                 || gradient != self.gradient || showsGrid != self.showsGrid || lineWidth != self.lineWidth
+                || inverted != self.inverted
         else { return }
         withoutAnimation {
             if gradient != self.gradient {
@@ -254,8 +258,23 @@ final class GraphLayerView: LayerHostView {
             self.gradient = gradient
             self.showsGrid = showsGrid
             self.lineWidth = lineWidth
+            if inverted != self.inverted {
+                self.inverted = inverted
+                // Low values sit at the baseline, so the gradient flips with the graph.
+                for g in [fill.gradient, line.gradient] {
+                    g.startPoint = CGPoint(x: 0.5, y: inverted ? 1 : 0)
+                    g.endPoint = CGPoint(x: 0.5, y: inverted ? 0 : 1)
+                }
+            }
             relayout()
         }
+    }
+
+    /// Layer y (y-up) for a value fraction 0...1: up from the bottom, or down from the top
+    /// when inverted.
+    private func y(forFraction v: CGFloat) -> CGFloat {
+        let usable = bounds.height - lineWidth
+        return inverted ? bounds.height - lineWidth / 2 - usable * v : lineWidth / 2 + usable * v
     }
 
     override func updateColors() {
@@ -292,17 +311,17 @@ final class GraphLayerView: LayerHostView {
         let step = size.width / CGFloat(capacity - 1)
         let offset = CGFloat(capacity - values.count)
         let span = max(range.upperBound - range.lowerBound, .ulpOfOne)
-        let usable = size.height - lineWidth
 
         let path = CGMutablePath()
         for (i, raw) in values.enumerated() {
             let v = (min(max(raw, range.lowerBound), range.upperBound) - range.lowerBound) / span
-            let point = CGPoint(x: (offset + CGFloat(i)) * step, y: lineWidth / 2 + usable * CGFloat(v))
+            let point = CGPoint(x: (offset + CGFloat(i)) * step, y: y(forFraction: CGFloat(v)))
             if i == 0 { path.move(to: point) } else { path.addLine(to: point) }
         }
         let area = path.mutableCopy()!
-        area.addLine(to: CGPoint(x: (offset + CGFloat(values.count - 1)) * step, y: 0))
-        area.addLine(to: CGPoint(x: offset * step, y: 0))
+        let baseline: CGFloat = inverted ? size.height : 0
+        area.addLine(to: CGPoint(x: (offset + CGFloat(values.count - 1)) * step, y: baseline))
+        area.addLine(to: CGPoint(x: offset * step, y: baseline))
         area.closeSubpath()
 
         line.shape.lineWidth = lineWidth

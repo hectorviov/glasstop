@@ -25,6 +25,8 @@ final class Sampler {
     private(set) var memory: MemoryReading?
     private(set) var memoryHistory: RingBuffer<Double>
     private(set) var gpuUsage: Double?
+    /// Same time axis as `cpuHistory` (sampled every tick), for the mirrored CPU/GPU graph.
+    private(set) var gpuHistory: RingBuffer<Double>
     private(set) var temperatures: [TempGroupReading] = []
     private(set) var cpuTempHistory: RingBuffer<Double>
     private(set) var lastTemperatureAt = Date.distantPast
@@ -53,8 +55,7 @@ final class Sampler {
     @ObservationIgnored private let queue = DispatchQueue(label: "com.hectorviov.glasstop.sampler", qos: .utility)
     @ObservationIgnored private var timer: DispatchSourceTimer?
     @ObservationIgnored private var tickCount = 0
-    @ObservationIgnored private var processEveryNTicks: Int     // queue-side copies of the cadence
-    @ObservationIgnored private var gpuEveryNTicks: Int
+    @ObservationIgnored private var processEveryNTicks: Int     // queue-side copy of the cadence
     @ObservationIgnored private let cpuReader = CPUReader()
     @ObservationIgnored private let memoryReader = MemoryReader()
     @ObservationIgnored private let processReader = ProcessReader()
@@ -66,9 +67,9 @@ final class Sampler {
         self.system = system
         self.settings = settings
         processEveryNTicks = settings.processEveryNTicks
-        gpuEveryNTicks = settings.gpuEveryNTicks
         cpuHistory = RingBuffer(capacity: settings.historyCapacity)
         memoryHistory = RingBuffer(capacity: settings.historyCapacity)
+        gpuHistory = RingBuffer(capacity: settings.historyCapacity)
         cpuTempHistory = RingBuffer(capacity: 2)
         temperatureReader = TemperatureReader(coreGroups: system.coreGroups)
         cpuTempHistory = RingBuffer(capacity: temperatureHistoryCapacity)
@@ -96,14 +97,14 @@ final class Sampler {
         settings = new
         cpuHistory = cpuHistory.resized(to: new.historyCapacity)
         memoryHistory = memoryHistory.resized(to: new.historyCapacity)
+        gpuHistory = gpuHistory.resized(to: new.historyCapacity)
         perCoreHistory = perCoreHistory.map { $0.resized(to: new.historyCapacity) }
         cpuTempHistory = cpuTempHistory.resized(to: temperatureHistoryCapacity)
         lastReceiveUptimeNs = 0            // a slower interval is not a stall
-        let processEvery = new.processEveryNTicks, gpuEvery = new.gpuEveryNTicks
+        let processEvery = new.processEveryNTicks
         queue.async { [weak self] in
             guard let self else { return }
             self.processEveryNTicks = processEvery
-            self.gpuEveryNTicks = gpuEvery
             if let timer = self.timer { self.schedule(timer, interval: new.interval, startNow: false) }
         }
     }
@@ -143,7 +144,7 @@ final class Sampler {
 
         let cpu = cpuReader.sample()
         let memory = memoryReader.sample()
-        let gpu = tickCount % gpuEveryNTicks == 0 ? gpuReader.sample() : nil
+        let gpu = gpuReader.sample()        // ~0.2 ms: every tick, so it shares the CPU graph's time axis
         let procs = tickCount % processEveryNTicks == 0 ? processReader.sample() : nil
 
         let duration = Double(DispatchTime.now().uptimeNanoseconds - startNs) / 1e9
@@ -210,7 +211,10 @@ final class Sampler {
             memory = m
             memoryHistory.append(m.usedPercent)
         }
-        if let g = s.gpu { gpuUsage = g }
+        if let g = s.gpu {
+            gpuUsage = g
+            gpuHistory.append(g)
+        }
         if let p = s.processes { processes = p }
 
         loadAverage = s.load

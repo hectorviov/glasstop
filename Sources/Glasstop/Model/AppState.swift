@@ -63,7 +63,9 @@ final class AppState {
         onChange?()
     }
 
-    func setSamplerSettings(_ settings: SamplerSettings) {
+    func setSamplerSettings(_ new: SamplerSettings) {
+        var settings = new
+        settings.interval = SamplerSettings.normalized(new.interval)
         guard settings != samplerSettings else { return }
         samplerSettings = settings
         settings.save()

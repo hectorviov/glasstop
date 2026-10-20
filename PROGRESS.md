@@ -31,6 +31,14 @@ What changed overnight, in one line each:
 7. Note: **Keep on Top is currently OFF** in your saved settings (it was off when I started
    tonight's session; I left it). ⌘T or the pin button turns it on.
 
+## Morning additions (2026-10-20, your requests)
+- **Mirrored GPU graph** like btop: the CPU box's big graph splits into CPU (up) and GPU
+  utilization (hanging down) with "▲ cpu · ▼ gpu" between them; GPU is sampled every tick now
+  (~0.2 ms) so both share the time axis.
+- **Refresh arrows** "− 500ms +" in the header: 10 ms steps, hold to repeat, ⌥-click = 100 ms;
+  range 100 ms – 5 s (Settings uses the same stepper). Verified 500 → 530 → 520 → 500 ms, saved
+  exactly (no float drift).
+
 ## Decisions to review
 - **CPU budget "< 1% of one core at 0.5 s" isn't reachable with this design.** Sampling alone is
   ~1.1–1.3%; redrawing ~100 changing labels + graphs at 2 Hz costs ~3–3.5% more while visible.
@@ -61,8 +69,15 @@ What changed overnight, in one line each:
   Glasstop allocations; the soak tracks that the count stays flat.
 
 ## Soak (M7) — running
-`scripts/soak.sh 24 30` → `soak/soak-20261019-2344.csv` (footprint, CPU, leaks every 3rd row,
-stalls). Sleep/wake cycles are for you (the stall detector measures uptime, so sleep doesn't count).
+**Run 1** (build 475352d): 23:44 → 07:09, 7.4 h continuous, 16 samples: footprint 54–64 MB with no
+upward trend, CPU 5.4–5.9%, leaks flat at 414 (Apple App Intents), **0 stalls**. Ended early at
+your request to relaunch on the build with the mirrored GPU graph and refresh arrows.
+**Run 2** (new build) started 07:1x → `soak/soak-20261020-*.csv`.
+
+`scripts/soak.sh 24 30` logs footprint, CPU, leaks (every 3rd row) and stalls every 30 min.
+Sleep/wake cycles are for you (the stall detector measures uptime, so sleep doesn't count).
+
+Run 1 samples:
 
 | Time | Footprint | CPU | Leaks | Stalls |
 |---|---|---|---|---|

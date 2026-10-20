@@ -13,6 +13,7 @@ struct HeaderBar: View {
             Text(sampler.system.chipName).font(.system(size: 13, weight: .semibold))
             Text(sampler.system.topologyDescription).font(.system(size: 11)).foregroundStyle(.secondary)
             Spacer()
+            RefreshControl()
             StaleBadge()
             Button {
                 appState.setAlwaysOnTop(!appState.alwaysOnTop)
@@ -25,6 +26,41 @@ struct HeaderBar: View {
         .padding(.leading, Self.trafficLightsWidth)
         .frame(height: Self.height)
         .background(WindowDragArea())
+    }
+}
+
+/// btop-style "− 500ms +": 10 ms per click, repeats while held, ⌥-click for 100 ms.
+private struct RefreshControl: View {
+    @Environment(AppState.self) private var appState
+
+    var body: some View {
+        let interval = appState.samplerSettings.interval
+        HStack(spacing: 2) {
+            arrow("minus", steps: -1, enabled: interval > SamplerSettings.intervalRange.lowerBound)
+            Text(String(format: "%.0fms", interval * 1000))
+                .font(.system(size: 11, weight: .medium).monospacedDigit())
+                .frame(minWidth: 46)
+            arrow("plus", steps: 1, enabled: interval < SamplerSettings.intervalRange.upperBound)
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 1)
+        .background(Capsule().fill(Color.primary.opacity(0.06)))
+        .help("Refresh interval: 10 ms per click, hold to repeat, ⌥-click for 100 ms")
+    }
+
+    private func arrow(_ symbol: String, steps: Int, enabled: Bool) -> some View {
+        Button {
+            let big = NSEvent.modifierFlags.contains(.option)
+            appState.setSamplerSettings(appState.samplerSettings.steppingInterval(by: big ? steps * 10 : steps))
+        } label: {
+            Image(systemName: symbol)
+                .font(.system(size: 9, weight: .bold))
+                .frame(width: 14, height: 14)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .buttonRepeatBehavior(.enabled)
+        .disabled(!enabled)
     }
 }
 

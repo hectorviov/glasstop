@@ -17,11 +17,8 @@ struct CPUPanel: View {
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .background(alignment: .leading) {
                     VStack(alignment: .leading, spacing: 4) {
-                        HistoryGraph(values: sampler.cpuHistory.values, capacity: sampler.historyCapacity,
-                                     interval: sampler.interval,
-                                     format: { String(format: "%.1f%%", $0) })
+                        TotalsGraph()
                         HStack {
-                            Text(String(format: "total %.1f%%", sampler.cpuTotal))
                             Spacer()
                             Text(String(format: "load %.2f  %.2f  %.2f",
                                         sampler.loadAverage.one, sampler.loadAverage.five, sampler.loadAverage.fifteen))
@@ -40,6 +37,43 @@ struct CPUPanel: View {
         let days = s / 86400, hours = s % 86400 / 3600, minutes = s % 3600 / 60
         return days > 0 ? String(format: "up %dd %02d:%02d", days, hours, minutes)
                         : String(format: "up %02d:%02d", hours, minutes)
+    }
+}
+
+/// btop's mirrored totals graph: CPU grows up from the middle line, GPU hangs down from it.
+private struct TotalsGraph: View {
+    @Environment(Sampler.self) private var sampler
+    private static let cpuShare: CGFloat = 0.58
+
+    var body: some View {
+        if sampler.gpuUsage == nil {
+            cpuGraph   // no accelerator stats: CPU only
+        } else {
+            GeometryReader { geo in
+                let labelHeight: CGFloat = 16
+                let graphs = max(geo.size.height - labelHeight, 0)
+                VStack(spacing: 0) {
+                    cpuGraph.frame(height: graphs * Self.cpuShare)
+                    HStack(spacing: 6) {
+                        Text(String(format: "▲ cpu %.1f%%", sampler.cpuTotal))
+                        Spacer()
+                        Text(String(format: "▼ gpu %.0f%%", sampler.gpuUsage ?? 0))
+                    }
+                    .font(.system(size: 10.5, weight: .medium).monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .frame(height: labelHeight)
+                    HistoryGraph(values: sampler.gpuHistory.values, capacity: sampler.historyCapacity,
+                                 showsGrid: false, inverted: true, interval: sampler.interval,
+                                 format: { String(format: "GPU %.0f%%", $0) })
+                        .frame(height: graphs * (1 - Self.cpuShare))
+                }
+            }
+        }
+    }
+
+    private var cpuGraph: some View {
+        HistoryGraph(values: sampler.cpuHistory.values, capacity: sampler.historyCapacity,
+                     interval: sampler.interval, format: { String(format: "CPU %.1f%%", $0) })
     }
 }
 
