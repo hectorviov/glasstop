@@ -7,6 +7,7 @@
 #   --install   also copy the app to /Applications (quits a running Glasstop first)
 #   OUT_DIR=dir scripts/bundle.sh   build somewhere other than build/
 #   VERSION=1.2.0 BUILD_NUMBER=42 scripts/bundle.sh   stamp the bundle (releases use the git tag)
+#   ARCH=arm64 scripts/bundle.sh   build for that architecture (releases: arm64, from any Mac)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -14,8 +15,10 @@ INSTALL=0
 [[ "${1:-}" == "--install" ]] && INSTALL=1
 OUT_DIR="${OUT_DIR:-build}"
 
-swift build -c release
-BIN_DIR="$(swift build -c release --show-bin-path)"
+build=(swift build -c release)
+[[ -n "${ARCH:-}" ]] && build+=(--arch "$ARCH")
+"${build[@]}"
+BIN_DIR="$("${build[@]}" --show-bin-path)"
 
 APP="$OUT_DIR/Glasstop.app"
 rm -rf "$APP"

@@ -110,6 +110,23 @@ Secrets and variables → Actions); without them it falls back to an ad-hoc buil
    Developer ID Application: …", two "Notarization …: Accepted" lines and `spctl` reporting
    *source=Notarized Developer ID*.
 
+### Building releases on your own Mac
+
+Releases build on GitHub's Intel runners (the Apple silicon pool is often too busy to get a
+machine) and cross-compile the arm64 app. The Release workflow can also run on a self-hosted
+Mac, which is usually faster (CI stays on GitHub's runners: on a public repo, pull requests must
+never run on your machine):
+
+1. Settings → Actions → Runners → **New self-hosted runner** → macOS, ARM64. Run the commands it
+   shows in e.g. `~/actions-runner`; at the labels prompt add `glasstop-release`. Then
+   `./svc.sh install && ./svc.sh start` so it runs in the background at login.
+2. Once the runner shows **Idle**, add the repository variable `RELEASE_RUNNER` (Settings →
+   Secrets and variables → Actions → Variables) with the value
+   `["self-hosted", "macOS", "ARM64", "glasstop-release"]`.
+
+Delete the variable to go back to GitHub's runners. The signing step uses a throwaway keychain
+and restores your keychain search list afterwards.
+
 Locally: `SIGN_IDENTITY="Developer ID Application: …" ./scripts/bundle.sh`, then
 `scripts/make-dmg.sh` (signs the image too) and `scripts/notarize.sh <file>` with a profile from
 `xcrun notarytool store-credentials` (`NOTARY_PROFILE=name`).

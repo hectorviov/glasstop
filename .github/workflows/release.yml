@@ -6,6 +6,13 @@ name: Release
 # With the signing secrets set (see README → "Signing and notarization"), the app and the
 # disk image are signed with the Developer ID, notarized by Apple and stapled, so Gatekeeper
 # opens them without a warning. Without them the release is ad-hoc signed, as before.
+#
+# Runs on GitHub's Intel macOS runners (the Apple silicon pool is often too busy to get a
+# machine) and cross-compiles the arm64 app, so the host architecture doesn't matter. The
+# repository variable RELEASE_RUNNER can name other runner labels as JSON, e.g.
+# ["self-hosted", "macOS", "ARM64", "glasstop-release"] for a self-hosted Mac. Only this
+# workflow should use a self-hosted runner: it can only be started by people with write
+# access, unlike CI, which runs code from pull requests.
 on:
   push:
     tags: ['v*']
@@ -20,7 +27,7 @@ permissions:
 
 jobs:
   release:
-    runs-on: macos-latest
+    runs-on: ${{ fromJSON(vars.RELEASE_RUNNER || '"macos-26-intel"') }}
     env:
       SIGNED: ${{ secrets.MACOS_CERTIFICATE_P12 != '' && secrets.NOTARY_API_KEY != '' }}
     steps:
@@ -56,6 +63,9 @@ jobs:
           NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
         run: |
           keychain="$RUNNER_TEMP/signing.keychain-db"
+          # On a self-hosted Mac this is the user's own keychain list: remember it, so the
+          # clean-up step can put it back exactly.
+          security list-keychains -d user | tr -d '"' | sed 's/^ *//' > "$RUNNER_TEMP/keychains-before"
           keychain_password=$(uuidgen)
           security create-keychain -p "$keychain_password" "$keychain"
           security set-keychain-settings -lut 21600 "$keychain"
@@ -89,9 +99,13 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.version }}
           BUILD_NUMBER: ${{ github.run_number }}
+          ARCH: arm64                      # Glasstop is Apple silicon only
         run: |
           swift --version
           ./scripts/bundle.sh
+          archs=$(lipo -archs build/Glasstop.app/Contents/MacOS/Glasstop)
+          echo "Architectures: $archs"
+          [[ "$archs" == "arm64" ]] || { echo "::error::expected an arm64 binary, got '$archs'"; exit 1; }
 
       - name: Notarize app
         if: env.SIGNED == 'true'
@@ -148,4 +162,10 @@ jobs:
         if: always()
         run: |
           [[ -n "${SIGNING_KEYCHAIN:-}" ]] && security delete-keychain "$SIGNING_KEYCHAIN" || true
+          if [[ -s "$RUNNER_TEMP/keychains-before" ]]; then
+            keychains=()
+            while IFS= read -r line; do [[ -n "$line" ]] && keychains+=("$line"); done < "$RUNNER_TEMP/keychains-before"
+            security list-keychains -d user -s "${keychains[@]}"
+            rm "$RUNNER_TEMP/keychains-before"
+          fi
           rm -f "$RUNNER_TEMP/notary-key.p8" "$RUNNER_TEMP/certificate.p12"
