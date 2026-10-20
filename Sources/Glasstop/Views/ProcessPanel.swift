@@ -153,20 +153,25 @@ struct ProcessTable: NSViewRepresentable {
         }
         var ascendingByDefault: Bool { self == .name || self == .command || self == .user || self == .pid }
 
+        /// Secondary columns (pid, command, user) of your processes.
+        private static let secondary = NSColor.labelColor.withAlphaComponent(0.65)
+        /// Other users' processes: readable, but clearly a step below (no cpu/memory access).
+        private static let restricted = NSColor.labelColor.withAlphaComponent(0.5)
+
         /// Text and color for one cell.
         func content(_ r: ProcessRow) -> (String, NSColor) {
-            let dim = NSColor.tertiaryLabelColor
+            let dim = Self.restricted
             switch self {
-            case .pid: return (String(r.pid), r.accessible ? .secondaryLabelColor : dim)
+            case .pid: return (String(r.pid), r.accessible ? Self.secondary : dim)
             case .name: return (r.name, .labelColor)
-            case .command: return (r.path, r.accessible ? .secondaryLabelColor : dim)
+            case .command: return (r.path, r.accessible ? Self.secondary : dim)
             case .threads: return (r.accessible ? String(r.threads) : "—", r.accessible ? .labelColor : dim)
-            case .user: return (r.user, r.accessible ? .secondaryLabelColor : dim)
+            case .user: return (r.user, r.accessible ? Self.secondary : dim)
             case .memory: return (r.accessible ? formatBytes(r.memory) : "—", r.accessible ? .labelColor : dim)
             case .cpu:
                 guard r.accessible else { return ("—", dim) }
                 // Quantized so tiny load changes don't recolor the row.
-                let color = r.cpu >= 1 ? Palette.loadNS((min(r.cpu, 100) / 5).rounded() * 5) : .secondaryLabelColor
+                let color = r.cpu >= 1 ? Palette.loadNS((min(r.cpu, 100) / 5).rounded() * 5) : Self.secondary
                 return (String(format: "%.1f", r.cpu), color)
             }
         }
@@ -469,6 +474,11 @@ final class ProcessRowView: NSTableRowView {
     override var isSelected: Bool {
         didSet { if isSelected != oldValue { needsDisplay = true } }
     }
+
+    /// Inside the window's frosted material AppKit can blend label colors with vibrancy, which
+    /// rendered alternate (striped vs. clear) rows at visibly different contrast. Rows draw
+    /// plain colors.
+    override var allowsVibrancy: Bool { false }
 
     /// Translucent stripes (instead of NSTableView's opaque alternating colors) so the
     /// window's material shows through.

@@ -40,6 +40,11 @@ What changed overnight, in one line each:
   **Default refresh is now 1000 ms** (was 500 ms) — measured ~3.4% CPU vs ~4.9% at 500 ms.
   Verified 1000 → 1100 → 1000 ms, saved exactly.
 
+- **Table contrast**: other users' processes (root daemons etc., whose CPU/memory macOS doesn't
+  expose — shown as "—") were drawn in the faintest system color, and window vibrancy made every
+  other row nearly invisible. Rows now opt out of vibrancy; restricted rows use 50% label color,
+  secondary columns of your processes 65% (were ~25% / ~55%).
+
 ## Decisions to review
 - **CPU budget "< 1% of one core at 0.5 s" isn't reachable with this design.** Sampling alone is
   ~1.1–1.3%; redrawing ~100 changing labels + graphs at 2 Hz costs ~3–3.5% more while visible.
