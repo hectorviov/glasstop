@@ -130,11 +130,14 @@ final class ProcessReader {
     }
 
     private func name(bsd: proc_bsdinfo, path: String) -> String {
-        let name = stringFromCTuple(bsd.pbi_name)
-        if !name.isEmpty { return name }
-        let comm = stringFromCTuple(bsd.pbi_comm)
-        if !comm.isEmpty { return comm }
-        return (path as NSString).lastPathComponent
+        let file = (path as NSString).lastPathComponent
+        for candidate in [stringFromCTuple(bsd.pbi_name), stringFromCTuple(bsd.pbi_comm)] where !candidate.isEmpty {
+            // The kernel cuts names at 31 (pbi_name) / 16 (pbi_comm) bytes; prefer the
+            // executable's file name when it is the untruncated version.
+            if candidate.utf8.count >= 15, file.count > candidate.count, file.hasPrefix(candidate) { return file }
+            return candidate
+        }
+        return file
     }
 
     private func userName(_ uid: uid_t) -> String {

@@ -30,9 +30,11 @@ struct ProcessPanel: View {
     }
 }
 
-/// NSTableView instead of SwiftUI Table: fixed row heights, only visible rows are realized,
-/// and no SwiftUI row diffing (which triggered AppKit's "reentrant operation in its
-/// NSTableView delegate" warning on every row-count change).
+/// NSTableView instead of SwiftUI Table (whose row diffing triggered AppKit's "reentrant
+/// operation in its NSTableView delegate" warning). Each row is one view that draws all of
+/// its columns in a single pass: no per-cell NSTextFields, so a refresh only redraws rows
+/// whose content actually changed. Columns still provide headers, sorting, resizing and
+/// reordering.
 struct ProcessTable: NSViewRepresentable {
     let rows: [ProcessRow]
 
@@ -51,7 +53,7 @@ struct ProcessTable: NSViewRepresentable {
         table.allowsColumnReordering = true
         table.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
 
-        for column in Coordinator.Column.allCases {
+        for column in Column.allCases {
             let c = NSTableColumn(identifier: column.identifier)
             c.title = column.title
             c.width = column.width
@@ -61,7 +63,7 @@ struct ProcessTable: NSViewRepresentable {
             c.sortDescriptorPrototype = NSSortDescriptor(key: column.rawValue, ascending: column.ascendingByDefault)
             table.addTableColumn(c)
         }
-        table.sortDescriptors = [NSSortDescriptor(key: Coordinator.Column.cpu.rawValue, ascending: false)]
+        table.sortDescriptors = [NSSortDescriptor(key: Column.cpu.rawValue, ascending: false)]
         table.dataSource = context.coordinator
         table.delegate = context.coordinator
         context.coordinator.tableView = table
@@ -80,82 +82,93 @@ struct ProcessTable: NSViewRepresentable {
         context.coordinator.update(rows)
     }
 
-    final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
-        enum Column: String, CaseIterable {
-            case pid, name, command, threads, user, memory, cpu
+    enum Column: String, CaseIterable {
+        case pid, name, command, threads, user, memory, cpu
 
-            var identifier: NSUserInterfaceItemIdentifier { NSUserInterfaceItemIdentifier(rawValue) }
-            var title: String {
-                switch self {
-                case .pid: return "PID"
-                case .name: return "Name"
-                case .command: return "Command"
-                case .threads: return "Thr"
-                case .user: return "User"
-                case .memory: return "Memory"
-                case .cpu: return "CPU %"
-                }
+        var identifier: NSUserInterfaceItemIdentifier { NSUserInterfaceItemIdentifier(rawValue) }
+        var title: String {
+            switch self {
+            case .pid: return "PID"
+            case .name: return "Name"
+            case .command: return "Command"
+            case .threads: return "Thr"
+            case .user: return "User"
+            case .memory: return "Memory"
+            case .cpu: return "CPU%"
             }
-            var width: CGFloat {
-                switch self {
-                case .pid: return 50
-                case .name: return 140
-                case .command: return 140
-                case .threads: return 30
-                case .user: return 72
-                case .memory: return 66
-                case .cpu: return 48
-                }
-            }
-            var minWidth: CGFloat { min(width, 34) }
-            var flexible: Bool { self == .name || self == .command }
-            var alignment: NSTextAlignment {
-                switch self {
-                case .pid, .threads, .memory, .cpu: return .right
-                default: return .left
-                }
-            }
-            var ascendingByDefault: Bool { self == .name || self == .command || self == .user || self == .pid }
         }
+        var width: CGFloat {
+            switch self {
+            case .pid: return 50
+            case .name: return 140
+            case .command: return 130
+            case .threads: return 30
+            case .user: return 72
+            case .memory: return 66
+            case .cpu: return 60
+            }
+        }
+        var minWidth: CGFloat { min(width, 34) }
+        var flexible: Bool { self == .name || self == .command }
+        var alignment: NSTextAlignment {
+            switch self {
+            case .pid, .threads, .memory, .cpu: return .right
+            default: return .left
+            }
+        }
+        var ascendingByDefault: Bool { self == .name || self == .command || self == .user || self == .pid }
 
+        /// Text and color for one cell.
+        func content(_ r: ProcessRow) -> (String, NSColor) {
+            let dim = NSColor.tertiaryLabelColor
+            switch self {
+            case .pid: return (String(r.pid), r.accessible ? .secondaryLabelColor : dim)
+            case .name: return (r.name, .labelColor)
+            case .command: return (r.path, r.accessible ? .secondaryLabelColor : dim)
+            case .threads: return (r.accessible ? String(r.threads) : "—", r.accessible ? .labelColor : dim)
+            case .user: return (r.user, r.accessible ? .secondaryLabelColor : dim)
+            case .memory: return (r.accessible ? formatBytes(r.memory) : "—", r.accessible ? .labelColor : dim)
+            case .cpu:
+                guard r.accessible else { return ("—", dim) }
+                // Quantized so tiny load changes don't recolor the row.
+                let color = r.cpu >= 1 ? Palette.loadNS((min(r.cpu, 100) / 5).rounded() * 5) : .secondaryLabelColor
+                return (String(format: "%.1f", r.cpu), color)
+            }
+        }
+    }
+
+    final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
         weak var tableView: NSTableView?
         private var rows: [ProcessRow] = []
         private var selectedPID: pid_t?
-        private var isReloading = false
-        private let font = NSFont.monospacedDigitSystemFont(ofSize: 11.5, weight: .regular)
+        private var isUpdating = false
+        private static let rowIdentifier = NSUserInterfaceItemIdentifier("processRow")
 
-        /// Called every refresh. Rows are positional, so instead of reloadData() (which tears
-        /// down and rebuilds every visible cell) only the row count is adjusted and the
-        /// visible cells are patched in place.
+        /// Rows are positional: adjust the count, then hand each visible row view its new
+        /// data (it redraws only if the data differs). No reloadData().
         func update(_ newRows: [ProcessRow]) {
             guard let tableView else { return }
             let oldCount = rows.count
             rows = sorted(newRows)
-            isReloading = true
+            isUpdating = true
             if rows.count > oldCount {
                 tableView.insertRows(at: IndexSet(oldCount..<rows.count), withAnimation: [])
             } else if rows.count < oldCount {
                 tableView.removeRows(at: IndexSet(rows.count..<oldCount), withAnimation: [])
             }
-            let visible = tableView.rows(in: tableView.visibleRect)
-            for row in visible.location..<min(visible.location + visible.length, rows.count) {
-                for (index, tableColumn) in tableView.tableColumns.enumerated() {
-                    guard let column = Column(rawValue: tableColumn.identifier.rawValue),
-                          let field = tableView.view(atColumn: index, row: row, makeIfNecessary: false) as? NSTextField
-                    else { continue }
-                    configure(field, column: column, row: rows[row])
-                }
-            }
+            refreshVisibleRows()
             restoreSelection()
-            isReloading = false
+            isUpdating = false
         }
 
-        private func reload() {
+        private func refreshVisibleRows(forceRedraw: Bool = false) {
             guard let tableView else { return }
-            isReloading = true
-            tableView.reloadData()
-            restoreSelection()
-            isReloading = false
+            let visible = tableView.rows(in: tableView.visibleRect)
+            for i in visible.location..<min(visible.location + visible.length, rows.count) {
+                guard let view = tableView.rowView(atRow: i, makeIfNecessary: false) as? ProcessRowView else { continue }
+                view.process = rows[i]
+                if forceRedraw { view.needsDisplay = true }
+            }
         }
 
         private func restoreSelection() {
@@ -198,64 +211,118 @@ struct ProcessTable: NSViewRepresentable {
 
         func numberOfRows(in tableView: NSTableView) -> Int { rows.count }
 
-        func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-            guard let tableColumn, let column = Column(rawValue: tableColumn.identifier.rawValue),
-                  row < rows.count else { return nil }
-            let field = (tableView.makeView(withIdentifier: column.identifier, owner: nil) as? NSTextField)
-                ?? makeField(column)
-            configure(field, column: column, row: rows[row])
-            return field
+        func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+            let view = (tableView.makeView(withIdentifier: Self.rowIdentifier, owner: nil) as? ProcessRowView)
+                ?? ProcessRowView(identifier: Self.rowIdentifier)
+            view.table = tableView
+            view.process = row < rows.count ? rows[row] : nil
+            return view
         }
 
-        /// Only touches the field when something changed: every set triggers a redraw.
-        private func configure(_ field: NSTextField, column: Column, row r: ProcessRow) {
-            let text: String
-            var color: NSColor = .labelColor
-            switch column {
-            case .pid:
-                text = String(r.pid)
-                color = .secondaryLabelColor
-            case .name:
-                text = r.name
-            case .command:
-                text = r.path
-                color = .secondaryLabelColor
-            case .threads:
-                text = r.accessible ? String(r.threads) : "—"
-            case .user:
-                text = r.user
-                color = .secondaryLabelColor
-            case .memory:
-                text = r.accessible ? formatBytes(r.memory) : "—"
-            case .cpu:
-                text = r.accessible ? String(format: "%.1f", r.cpu) : "—"
-                // Quantized so tiny load changes don't recolor (and redraw) the cell.
-                color = r.accessible && r.cpu >= 1 ? Palette.loadNS((min(r.cpu, 100) / 5).rounded() * 5) : .secondaryLabelColor
-            }
-            if !r.accessible, column != .name { color = .tertiaryLabelColor }
-            if field.stringValue != text { field.stringValue = text }
-            if field.textColor != color { field.textColor = color }
-        }
+        /// The row view draws every column itself.
+        func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? { nil }
 
         func tableView(_ tableView: NSTableView, sortDescriptorsDidChange oldDescriptors: [NSSortDescriptor]) {
             rows = sorted(rows)
-            reload()
+            refreshVisibleRows()
+            restoreSelection()
         }
 
+        func tableViewColumnDidResize(_ notification: Notification) { refreshVisibleRows(forceRedraw: true) }
+        func tableViewColumnDidMove(_ notification: Notification) { refreshVisibleRows(forceRedraw: true) }
+
         func tableViewSelectionDidChange(_ notification: Notification) {
-            guard !isReloading, let tableView else { return }
+            guard !isUpdating, let tableView else { return }
             let i = tableView.selectedRow
             selectedPID = i >= 0 && i < rows.count ? rows[i].pid : nil
         }
+    }
+}
 
-        private func makeField(_ column: Column) -> NSTextField {
-            let field = NSTextField(labelWithString: "")
-            field.identifier = column.identifier
-            field.font = font
-            field.alignment = column.alignment
-            field.lineBreakMode = column == .command ? .byTruncatingMiddle : .byTruncatingTail
-            field.cell?.truncatesLastVisibleLine = true
-            return field
+/// Draws one process row (all columns) in a single pass, at the table's column positions.
+final class ProcessRowView: NSTableRowView {
+    weak var table: NSTableView?
+    var process: ProcessRow? {
+        didSet { if process != oldValue { needsDisplay = true } }
+    }
+
+    private static let font = NSFont.monospacedDigitSystemFont(ofSize: 11.5, weight: .regular)
+
+    init(identifier: NSUserInterfaceItemIdentifier) {
+        super.init(frame: .zero)
+        self.identifier = identifier
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    override var isSelected: Bool {
+        didSet { if isSelected != oldValue { needsDisplay = true } }
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)   // background + selection
+        guard let process, let table, let ctx = NSGraphicsContext.current?.cgContext else { return }
+        let selected = isSelected && isEmphasized
+        let baseline = floor((bounds.height - (Self.font.ascender - Self.font.descender)) / 2 + Self.font.ascender)
+        let inset = table.intercellSpacing.width / 2
+
+        ctx.saveGState()
+        ctx.textMatrix = CGAffineTransform(scaleX: 1, y: -1)   // row views are flipped
+        for (index, tableColumn) in table.tableColumns.enumerated() {
+            guard let column = ProcessTable.Column(rawValue: tableColumn.identifier.rawValue) else { continue }
+            let columnRect = table.rect(ofColumn: index)
+            let x = columnRect.minX + inset
+            let width = columnRect.width - 2 * inset
+            guard width > 4, x < dirtyRect.maxX, x + width > dirtyRect.minX else { continue }
+            let (text, color) = column.content(process)
+            let line = TextLineCache.shared.line(text, width: width, column: column, font: Self.font)
+            let lineWidth = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+            let dx = column.alignment == .right ? max(width - lineWidth, 0) : 0
+            ctx.setFillColor((selected ? NSColor.alternateSelectedControlTextColor : color).cgColor)
+            ctx.textPosition = CGPoint(x: x + dx, y: baseline)
+            CTLineDraw(line, ctx)
         }
+        ctx.restoreGState()
+    }
+
+    override func accessibilityLabel() -> String? {
+        guard let p = process else { return nil }
+        return "\(p.name), PID \(p.pid), CPU \(String(format: "%.1f", p.cpu)) percent, memory \(formatBytes(p.memory))"
+    }
+}
+
+/// Typeset (and truncated) CoreText lines, keyed by text + column width. Typesetting and
+/// truncation dominate table drawing; names, paths and users rarely change, they just move
+/// between rows as the sort order shifts. Color comes from the context, so it isn't part of
+/// the key. Bounded: cleared when it grows past `limit` entries.
+final class TextLineCache {
+    static let shared = TextLineCache()
+    private static let limit = 4000
+
+    private struct Key: Hashable {
+        let text: String
+        let width: Int
+        let column: ProcessTable.Column
+    }
+
+    private var lines: [Key: CTLine] = [:]
+
+    func line(_ text: String, width: CGFloat, column: ProcessTable.Column, font: NSFont) -> CTLine {
+        let key = Key(text: text, width: Int(width.rounded(.down)), column: column)
+        if let cached = lines[key] { return cached }
+        if lines.count >= Self.limit { lines.removeAll(keepingCapacity: true) }
+
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            NSAttributedString.Key(kCTForegroundColorFromContextAttributeName as String): true,
+        ]
+        let full = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: attributes))
+        var line = full
+        if CGFloat(CTLineGetTypographicBounds(full, nil, nil, nil)) > CGFloat(key.width) {
+            let ellipsis = CTLineCreateWithAttributedString(NSAttributedString(string: "…", attributes: attributes))
+            line = CTLineCreateTruncatedLine(full, Double(key.width), column == .command ? .middle : .end, ellipsis) ?? full
+        }
+        lines[key] = line
+        return line
     }
 }

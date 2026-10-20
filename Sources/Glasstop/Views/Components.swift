@@ -70,7 +70,6 @@ struct Panel<Content: View, Accessory: View>: View {
                 RoundedRectangle(cornerRadius: 9)
                     .strokeBorder(tint.opacity(0.35), lineWidth: 1)
                     .background(RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(0.025)))
-                    .opacity(UserDefaults.standard.string(forKey: "hide")?.contains("panelbg") == true ? 0 : 1) // TEMP
             )
             .overlay(alignment: .top) {
                 HStack(spacing: 6) {
