@@ -16,7 +16,7 @@ struct ProcessPanel: View {
         guard !f.isEmpty || onlyMine || hideIdle else { return sampler.processes }
         return sampler.processes.filter {
             (!onlyMine || $0.uid == Self.myUID)
-                && (!hideIdle || $0.cpu > 0 || $0.memory > 0)
+                && (!hideIdle || $0.cpu > 0 || $0.memory > 0 || $0.gpu > 0)
                 && (f.isEmpty
                     || $0.name.localizedCaseInsensitiveContains(f)
                     || $0.path.localizedCaseInsensitiveContains(f)
@@ -119,7 +119,7 @@ struct ProcessTable: NSViewRepresentable {
     }
 
     enum Column: String, CaseIterable {
-        case pid, name, command, threads, user, memory, cpu
+        case pid, name, command, threads, user, memory, cpu, gpu
 
         var identifier: NSUserInterfaceItemIdentifier { NSUserInterfaceItemIdentifier(rawValue) }
         var title: String {
@@ -131,6 +131,7 @@ struct ProcessTable: NSViewRepresentable {
             case .user: return "User"
             case .memory: return "Memory"
             case .cpu: return "CPU%"
+            case .gpu: return "GPU%"
             }
         }
         var width: CGFloat {
@@ -142,13 +143,15 @@ struct ProcessTable: NSViewRepresentable {
             case .user: return 72
             case .memory: return 66
             case .cpu: return 60
+            case .gpu: return 60
             }
         }
-        var minWidth: CGFloat { min(width, 34) }
+        /// CPU% / GPU% keep room for the title plus the sort arrow.
+        var minWidth: CGFloat { self == .cpu || self == .gpu ? 56 : min(width, 34) }
         var flexible: Bool { self == .name || self == .command }
         var alignment: NSTextAlignment {
             switch self {
-            case .pid, .threads, .memory, .cpu: return .right
+            case .pid, .threads, .memory, .cpu, .gpu: return .right
             default: return .left
             }
         }
@@ -174,6 +177,11 @@ struct ProcessTable: NSViewRepresentable {
                 // Quantized so tiny load changes don't recolor the row.
                 let color = r.cpu >= 1 ? Palette.loadNS((min(r.cpu, 100) / 5).rounded() * 5) : Self.secondary
                 return (String(format: "%.1f", r.cpu), color)
+            case .gpu:
+                // Readable for every process, so other users' rows show it too (WindowServer…).
+                let color = r.gpu >= 1 ? Palette.loadNS((min(r.gpu, 100) / 5).rounded() * 5)
+                                       : (r.accessible ? Self.secondary : dim)
+                return (String(format: "%.1f", r.gpu), color)
             }
         }
     }
@@ -318,6 +326,7 @@ struct ProcessTable: NSViewRepresentable {
                 case .user: order = a.user.localizedCaseInsensitiveCompare(b.user)
                 case .memory: order = self.compare(a.memory, b.memory)
                 case .cpu: order = self.compare(a.cpu, b.cpu)
+                case .gpu: order = self.compare(a.gpu, b.gpu)
                 }
                 if order == .orderedSame { return a.pid < b.pid }
                 return asc ? order == .orderedAscending : order == .orderedDescending
@@ -526,7 +535,7 @@ final class ProcessRowView: NSTableRowView {
 
     override func accessibilityLabel() -> String? {
         guard let p = process else { return nil }
-        return "\(p.name), PID \(p.pid), CPU \(String(format: "%.1f", p.cpu)) percent, memory \(formatBytes(p.memory))"
+        return "\(p.name), PID \(p.pid), CPU \(String(format: "%.1f", p.cpu)) percent, GPU \(String(format: "%.1f", p.gpu)) percent, memory \(formatBytes(p.memory))"
     }
 }
 

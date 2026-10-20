@@ -55,6 +55,7 @@ struct ProcessRow: Identifiable, Hashable {
     let threads: Int
     let cpu: Double            // % of one core (can exceed 100, like top)
     let memory: UInt64         // phys footprint (falls back to resident size)
+    var gpu: Double = 0        // % of the GPU (available for every user's processes)
     let accessible: Bool       // false = owned by another user; no cpu/mem data
 
     var id: pid_t { pid }

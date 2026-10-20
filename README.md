@@ -29,7 +29,7 @@ fullscreen Spaces).
 
 Window menu: opacity (also a slider in Settings) and click-through (the window ignores the
 mouse; click the Dock icon to turn it off). Process table: right-click for Copy PID / Copy Path / Reveal in Finder /
-Terminate / Force Kill; the filter button has only-my-processes, hide-idle and tree view.
+Terminate / Force Kill; click GPU% to sort by GPU use; the filter button has only-my-processes, hide-idle and tree view.
 Filter text, sort order and column layout persist. The net panel's title is a dropdown: all Wi-Fi/Ethernet adapters
 (default) or one interface (adapters by name, plus VPN tunnels and VM bridges).
 
@@ -75,6 +75,7 @@ Notes:
 | Memory | `host_statistics64(HOST_VM_INFO64)`, `vm.swapusage` |
 | Processes | `proc_listallpids`, `proc_pidinfo(PROC_PIDTASKALLINFO)`, `proc_pid_rusage`, `proc_pidpath` |
 | GPU utilization | IOAccelerator `PerformanceStatistics` → `Device Utilization %` |
+| Process GPU % | IOAccelerator's Metal clients (`AGXDeviceUserClient`): `IOUserClientCreator` pid + `AppUsage` → `accumulatedGPUTime` (ns) deltas, like Activity Monitor's % GPU; readable for every user's processes |
 | Temperatures | AppleSMC float keys (`Tp*` Super cluster, `Tm*` Performance cluster, `Tg*` GPU, `TB*T` battery); HID `PMU tdie*` fallback |
 | Network | sysctl `IFMIB_IFDATA` (`ifmibdata`, 64-bit counters) for `en*` interfaces — `NET_RT_IFLIST2` byte counters come back truncated to 32 bits on macOS 27 |
 | Disk throughput | IOKit `IOBlockStorageDriver` → `Statistics` → `Bytes (Read)` / `Bytes (Write)` |

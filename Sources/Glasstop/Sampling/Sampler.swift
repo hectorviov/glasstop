@@ -70,6 +70,7 @@ final class Sampler {
     @ObservationIgnored private let memoryReader = MemoryReader()
     @ObservationIgnored private let processReader = ProcessReader()
     @ObservationIgnored private let gpuReader = GPUReader()
+    @ObservationIgnored private let gpuProcessReader = GPUProcessReader()
     @ObservationIgnored private let networkReader = NetworkReader()
     @ObservationIgnored private let diskReader = DiskReader()
     @ObservationIgnored private var lastVolumesNs: UInt64 = 0
@@ -165,6 +166,7 @@ final class Sampler {
         queue.async { [weak self] in
             self?.cpuReader.reset()
             self?.processReader.reset()
+            self?.gpuProcessReader.reset()
             self?.networkReader.reset()
             self?.diskReader.reset()
         }
@@ -189,7 +191,14 @@ final class Sampler {
             volumes = diskReader.volumes()  // ~0.3 ms, local volumes only
             lastVolumesNs = nowNs
         }
-        let procs = tickCount % processEveryNTicks == 0 ? processReader.sample() : nil
+        var procs: [ProcessRow]?
+        if tickCount % processEveryNTicks == 0 {
+            let gpuByPID = gpuProcessReader.sample()   // ~1.4 ms
+            procs = processReader.sample()
+            if !gpuByPID.isEmpty, procs != nil {
+                for i in procs!.indices { procs![i].gpu = gpuByPID[procs![i].pid] ?? 0 }
+            }
+        }
 
         let duration = Double(DispatchTime.now().uptimeNanoseconds - startNs) / 1e9
         let snapshot = Snapshot(timestamp: Date(), duration: duration, cpu: cpu, memory: memory,

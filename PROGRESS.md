@@ -67,6 +67,13 @@ What changed overnight, in one line each:
   top. Closing the window keeps Glasstop in the Dock; clicking the Dock icon reopens it and turns
   click-through off. Verified: `lsappinfo` type Foreground (regular), menus present.
 
+- **GPU% column** in the process table (sortable, after CPU%): per-process GPU time from the
+  accelerator's Metal clients (`accumulatedGPUTime`), the same source as Activity Monitor's
+  % GPU. Works for other users' processes too (WindowServer ~12–16%). ~1.4 ms per process
+  refresh for ~120 clients. Finding: the overall `Device Utilization %` (top GPU meter) sometimes
+  reads 0 for long stretches while processes clearly use the GPU (sum ~22%); at other times both
+  agree (~20%).
+
 ## Decisions to review
 - **CPU budget "< 1% of one core at 0.5 s" isn't reachable with this design.** Sampling alone is
   ~1.1–1.3%; redrawing ~100 changing labels + graphs at 2 Hz costs ~3–3.5% more while visible.
