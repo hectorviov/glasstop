@@ -11,7 +11,6 @@ struct ProcessPanel: View {
     @AppStorage("processCPULazy") private var cpuLazy = false
     /// Pinned processes, in pin order. Not persisted: a pid means nothing after a relaunch.
     @State private var pins: [PinKey] = []
-    @State private var columnLayout = ColumnLayout()
     private static let maxPins = 8
 
     private static let myUID = getuid()
@@ -59,16 +58,9 @@ struct ProcessPanel: View {
                 .fixedSize()
                 .help("CPU% sort like btop's \"cpu lazy\": by average CPU over each process's lifetime, so the order doesn't jump every refresh; processes using a lot of CPU right now are still pulled to the top")
         } content: {
-            VStack(spacing: 0) {
-                ProcessTable(rows: rows, tree: tree, cpuLazy: cpuLazy, pinned: Set(pins),
-                             layout: columnLayout, onTogglePin: togglePin)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                if !pins.isEmpty {
-                    PinnedSection(entries: pinnedEntries, layout: columnLayout) { key in
-                        pins.removeAll { $0 == key }
-                    }
-                }
-            }
+            ProcessTable(rows: rows, tree: tree, cpuLazy: cpuLazy, pinned: pinnedEntries,
+                         onTogglePin: togglePin, onUnpin: { key in pins.removeAll { $0 == key } })
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
@@ -107,60 +99,29 @@ struct PinnedEntry: Equatable {
     let row: ProcessRow?        // nil: the process has exited
 }
 
-/// The process table's column geometry, shared with the pinned rows so they line up with
-/// the table's columns (widths, order and auto-hidden columns included).
-final class ColumnLayout {
-    weak var table: NSTableView?
-    /// Called on main whenever the columns change.
-    var onChange: (() -> Void)?
-    func changed() { onChange?() }
-}
-
-/// "PINNED" section under the table: one row per pinned process, mirroring its live values
-/// in the table's columns, with a button to unpin.
-private struct PinnedSection: View {
-    let entries: [PinnedEntry]
-    let layout: ColumnLayout
-    let onUnpin: (PinKey) -> Void
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 6) {
-                Text("PINNED")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                Rectangle().fill(Color.primary.opacity(0.15)).frame(height: 1)
-            }
-            .padding(.top, 5)
-            .padding(.bottom, 3)
-            PinnedRows(entries: entries, layout: layout, onUnpin: onUnpin)
-                .frame(height: CGFloat(entries.count) * PinnedRowsView.rowPitch)
-        }
-    }
-}
-
-private struct PinnedRows: NSViewRepresentable {
-    let entries: [PinnedEntry]
-    let layout: ColumnLayout
-    let onUnpin: (PinKey) -> Void
-
-    func makeNSView(context: Context) -> PinnedRowsView {
-        let view = PinnedRowsView()
-        layout.onChange = { [weak view] in view?.redrawAll() }
-        return view
-    }
-
-    func updateNSView(_ view: PinnedRowsView, context: Context) {
-        view.update(entries, table: layout.table, onUnpin: onUnpin)
-    }
-}
-
-/// Row views drawn with the main table's column geometry (they don't live in a table), each
-/// with a red unpin button at the end of the row. An exited process stays, dimmed, with
-/// its last values until it's unpinned.
+/// The "PINNED" strip under the table's header: a label, one row per pinned process drawn
+/// with the table's column geometry (the rows don't live in the table, so sorting and
+/// scrolling never move them), each with a red unpin button at the end, and a divider. An
+/// exited process stays, dimmed, with its last values until it's unpinned.
 final class PinnedRowsView: NSView {
     static let rowPitch: CGFloat = 19             // table row height 17 + intercell spacing 2
-    private static let buttonWidth: CGFloat = 18
+    private static let labelHeight: CGFloat = 15
+    private static let dividerHeight: CGFloat = 5
+    /// Text keeps clear of the button by this much plus the button itself.
+    private static let buttonSize: CGFloat = 14
+    private static let buttonGap: CGFloat = 8
+    private static let buttonInset: CGFloat = 5   // from the row's end
+
+    static func height(rows: Int) -> CGFloat {
+        rows == 0 ? 0 : labelHeight + CGFloat(rows) * rowPitch + dividerHeight
+    }
+
+    private let label: NSTextField = {
+        let label = NSTextField(labelWithString: "PINNED")
+        label.font = .systemFont(ofSize: 10, weight: .semibold)
+        label.textColor = .secondaryLabelColor
+        return label
+    }()
 
     private var rows: [ProcessRowView] = []
     private var buttons: [NSButton] = []
@@ -169,6 +130,13 @@ final class PinnedRowsView: NSView {
     private var onUnpin: ((PinKey) -> Void)?
 
     override var isFlipped: Bool { true }
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        addSubview(label)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
     func update(_ entries: [PinnedEntry], table: NSTableView?, onUnpin: @escaping (PinKey) -> Void) {
         self.onUnpin = onUnpin
@@ -195,7 +163,7 @@ final class PinnedRowsView: NSView {
 
     private func addRow() {
         let row = ProcessRowView(identifier: NSUserInterfaceItemIdentifier("pinnedRow"))
-        row.trailingReserve = Self.buttonWidth
+        row.trailingReserve = Self.buttonInset + Self.buttonSize + Self.buttonGap
         addSubview(row)
         rows.append(row)
 
@@ -211,12 +179,20 @@ final class PinnedRowsView: NSView {
 
     override func layout() {
         super.layout()
+        label.frame = NSRect(x: 6, y: 2, width: 80, height: Self.labelHeight - 2)
         for (i, row) in rows.enumerated() {
-            let y = CGFloat(i) * Self.rowPitch
+            let y = Self.labelHeight + CGFloat(i) * Self.rowPitch
             row.frame = NSRect(x: 0, y: y, width: bounds.width, height: Self.rowPitch)
-            buttons[i].frame = NSRect(x: bounds.width - Self.buttonWidth + 1, y: y + 1,
-                                      width: Self.buttonWidth - 4, height: Self.rowPitch - 2)
+            buttons[i].frame = NSRect(x: bounds.width - Self.buttonInset - Self.buttonSize,
+                                      y: y + (Self.rowPitch - Self.buttonSize) / 2,
+                                      width: Self.buttonSize, height: Self.buttonSize)
         }
+    }
+
+    /// Divider between the pinned rows and the live list.
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.labelColor.withAlphaComponent(0.15).setFill()
+        NSRect(x: 0, y: bounds.height - 3, width: bounds.width, height: 1).fill()
     }
 
     @objc private func unpin(_ sender: NSButton) {
@@ -234,9 +210,9 @@ struct ProcessTable: NSViewRepresentable {
     let rows: [ProcessRow]
     var tree = false
     var cpuLazy = false
-    var pinned: Set<PinKey> = []
-    var layout: ColumnLayout?
+    var pinned: [PinnedEntry] = []
     var onTogglePin: ((ProcessRow) -> Void)?
+    var onUnpin: ((PinKey) -> Void)?
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -270,7 +246,6 @@ struct ProcessTable: NSViewRepresentable {
         table.dataSource = context.coordinator
         table.delegate = context.coordinator
         context.coordinator.tableView = table
-        layout?.table = table
         table.target = context.coordinator
         table.doubleAction = #selector(Coordinator.doubleClicked(_:))
         context.coordinator.observeColumnWidths(of: table)
@@ -279,6 +254,9 @@ struct ProcessTable: NSViewRepresentable {
         table.menu = menu
 
         let scroll = OverlayScrollView()
+        let pinnedView = PinnedRowsView()
+        scroll.topAccessory = pinnedView
+        context.coordinator.pinnedView = pinnedView
         scroll.documentView = table
         scroll.hasVerticalScroller = true
         scroll.hasHorizontalScroller = true      // fallback if the user widens columns past the view
@@ -293,9 +271,12 @@ struct ProcessTable: NSViewRepresentable {
     func updateNSView(_ nsView: NSScrollView, context: Context) {
         context.coordinator.tree = tree
         context.coordinator.cpuLazy = cpuLazy
-        context.coordinator.pinned = pinned
-        context.coordinator.layout = layout
+        context.coordinator.pinned = Set(pinned.map(\.key))
         context.coordinator.onTogglePin = onTogglePin
+        if let scroll = nsView as? OverlayScrollView, let pinnedView = context.coordinator.pinnedView {
+            pinnedView.update(pinned, table: context.coordinator.tableView) { key in onUnpin?(key) }
+            scroll.topAccessoryHeight = PinnedRowsView.height(rows: pinned.count)
+        }
         context.coordinator.update(rows)
     }
 
@@ -374,8 +355,8 @@ struct ProcessTable: NSViewRepresentable {
         var tree = false
         var cpuLazy = false
         var pinned: Set<PinKey> = []
-        var layout: ColumnLayout?
         var onTogglePin: ((ProcessRow) -> Void)?
+        weak var pinnedView: PinnedRowsView?
         private var resizeObserver: NSObjectProtocol?
         private var widthObservers: [NSKeyValueObservation] = []
 
@@ -473,7 +454,7 @@ struct ProcessTable: NSViewRepresentable {
                 view.process = rows[i]
                 if forceRedraw { view.redrawContent() }
             }
-            if forceRedraw { layout?.changed() }   // pinned rows share the column geometry
+            if forceRedraw { pinnedView?.redrawAll() }   // pinned rows share the column geometry
         }
 
         private func restoreSelection() {
@@ -727,6 +708,56 @@ final class OverlayScrollView: NSScrollView {
     override var scrollerStyle: NSScroller.Style {
         get { .overlay }
         set { super.scrollerStyle = .overlay }
+    }
+
+    /// A strip between the table's header and its rows (the pinned processes). It isn't part
+    /// of the scrolled content: the clip view and scroller give up its height.
+    var topAccessory: NSView? {
+        didSet {
+            oldValue?.removeFromSuperview()
+            if let topAccessory { addSubview(topAccessory) }
+            tile()
+        }
+    }
+    var topAccessoryHeight: CGFloat = 0 {
+        didSet { if topAccessoryHeight != oldValue { tile() } }
+    }
+
+    override func tile() {
+        super.tile()
+        guard let topAccessory else { return }
+        let height = topAccessoryHeight
+        topAccessory.isHidden = height == 0
+        guard height > 0 else {
+            contentView.automaticallyAdjustsContentInsets = true
+            return
+        }
+        // Normally the clip view runs under the header with a top inset for it, so rows can
+        // scroll beneath it. With the strip in between that inset would leave a gap (and rows
+        // scrolling behind the strip): the clip starts below the strip with no inset instead.
+        let header = (documentView as? NSTableView)?.headerView?.superview?.frame ?? .zero
+        var clip = contentView.frame
+        if isFlipped {
+            topAccessory.frame = NSRect(x: clip.minX, y: header.maxY, width: clip.width, height: height)
+            clip.origin.y = header.maxY + height
+            clip.size.height = max(bounds.height - clip.minY, 0)
+        } else {
+            topAccessory.frame = NSRect(x: clip.minX, y: header.minY - height, width: clip.width, height: height)
+            clip.size.height = max(header.minY - height - clip.minY, 0)
+        }
+        contentView.frame = clip
+        contentView.automaticallyAdjustsContentInsets = false
+        if contentView.contentInsets.top != 0 {
+            contentView.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
+            contentView.scroll(to: contentView.constrainBoundsRect(contentView.bounds).origin)
+            reflectScrolledClipView(contentView)
+        }
+        if let scroller = verticalScroller, !scroller.isHidden {
+            var frame = scroller.frame
+            frame.size.height = clip.height
+            frame.origin.y = clip.minY
+            scroller.frame = frame
+        }
     }
 }
 

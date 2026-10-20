@@ -88,8 +88,8 @@ What changed overnight, in one line each:
 - **Stale badge false alarm fixed**: while the window was covered, the header could show
   "stalled Ns" because publishing pauses then; it now checks when ticks actually arrive.
 
-- **Pinned processes** (your request): double-click a row or right-click → Pin. A PINNED section
-  under the table mirrors each pinned process's live row in the table's columns (shared column
+- **Pinned processes** (your request): double-click a row or right-click → Pin. A PINNED strip
+  at the top of the table (below the header, outside the scrolled rows) mirrors each pinned process's live row in the table's columns (shared column
   geometry: widths, order and auto-hidden columns follow the table), with a red × at the row's
   end to unpin. **Focus fix:** Esc in an empty filter (and ↓) now focuses the table, so the
   selection is blue and arrow keys work; before, focus went nowhere and the selection went grey.
@@ -118,7 +118,7 @@ What changed overnight, in one line each:
   no reliable sensor→core mapping. HID `PMU tdie*` is the fallback (0.75 ms/sensor, 5× slower).
 - **App Nap opt-out** (`userInitiatedAllowingIdleSystemSleep`) so a covered window doesn't
   throttle sampling (graphs would skip samples). The system can still idle-sleep.
-- **Pins**: at the bottom of the PROC panel (column headers stay on top); keyed by pid + start
+- **Pins**: a strip under the column header, above the live rows (your call: top); keyed by pid + start
   time, not persisted across launches (a pid means nothing after a relaunch); at most 8; an
   exited process stays dimmed with its last values until unpinned; pinned rows ignore the
   filter and view options.
