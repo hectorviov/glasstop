@@ -25,7 +25,7 @@
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSHumanReadableCopyright</key>
-	<string>Glasstop — lightweight system monitor</string>
+	<string>© 2026 Hector Villarreal. Apache License 2.0.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>

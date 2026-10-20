@@ -350,10 +350,11 @@ struct ProcessTable: NSViewRepresentable {
 
         private var isLazyCPUSort: Bool { cpuLazy && tableView?.sortDescriptors.first?.key == Column.cpu.rawValue }
 
-        /// btop's "cpu lazy" (btop_shared.cpp, proc_sorter): after sorting by lifetime CPU,
-        /// processes that are busy *now* move to the front. The threshold is 30%, or the busiest
-        /// of the first six rows if that's higher (10% if none of them passes 30%); rows already
-        /// at the front above 30% stay put; at most 11 rows move per refresh.
+        /// btop's "cpu lazy" (btop_shared.cpp, proc_sorter; Apache-2.0, see NOTICE): after
+        /// sorting by lifetime CPU, processes that are busy *now* move to the front. The
+        /// threshold is 30%, or the busiest of the first six rows if that's higher (10% if none
+        /// of them passes 30%); rows already at the front above 30% stay put; at most 11 rows
+        /// move per refresh.
         private func bumpBusy(_ rows: inout [ProcessRow]) {
             var maxCPU = 10.0, target = 30.0, offset = 0, moved = 0
             for i in rows.indices {
