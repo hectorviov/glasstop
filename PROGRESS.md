@@ -72,7 +72,8 @@ What changed overnight, in one line each:
 **Run 1** (build 475352d): 23:44 → 07:09, 7.4 h continuous, 16 samples: footprint 54–64 MB with no
 upward trend, CPU 5.4–5.9%, leaks flat at 414 (Apple App Intents), **0 stalls**. Ended early at
 your request to relaunch on the build with the mirrored GPU graph and refresh arrows.
-**Run 2** (new build) started 07:1x → `soak/soak-20261020-*.csv`.
+**Run 2** (build 68dbb37) started 07:10 → `soak/soak-20261020-0710.csv`. First sample: 69 MB
+(bigger window now, plus GPU history), 5.71% CPU, leaks 417 (same three Apple cycles), 0 stalls.
 
 `scripts/soak.sh 24 30` logs footprint, CPU, leaks (every 3rd row) and stalls every 30 min.
 Sleep/wake cycles are for you (the stall detector measures uptime, so sleep doesn't count).
