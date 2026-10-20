@@ -35,6 +35,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         applyAlwaysOnTop(appState.alwaysOnTop)
         appState.onAlwaysOnTopChange = { [weak self] on in self?.applyAlwaysOnTop(on) }
 
+        // Hidden, minimized or fully covered: stop publishing to SwiftUI (sampling continues).
+        NotificationCenter.default.addObserver(forName: NSWindow.didChangeOcclusionStateNotification,
+                                               object: panel, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let panel = self.panel else { return }
+                self.sampler.isVisible = panel.occlusionState.contains(.visible)
+            }
+        }
+
         panel.makeKeyAndOrderFront(nil)
         NSApp.activate()
         sampler.start()

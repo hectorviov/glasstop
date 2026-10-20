@@ -8,10 +8,12 @@ final class ProcessReader {
     static let idleFootprintEveryNSamples = 5
 
     private struct Prev { let start: UInt64; let cpuNs: Double; let footprint: UInt64?; let footprintAge: Int }
-    private struct PathEntry { let start: UInt64; let path: String }
+    /// Name + path, cached per process identity. `comm` changes on exec(), so a process
+    /// that execs gets its new name/path even though pid and start time stay the same.
+    private struct Identity { let start: UInt64; let comm: (UInt64, UInt64); let name: String; let path: String }
 
     private var previous: [pid_t: Prev] = [:]
-    private var pathCache: [pid_t: PathEntry] = [:]
+    private var identityCache: [pid_t: Identity] = [:]
     private var userCache: [uid_t: String] = [:]
     private var lastWallNs: UInt64 = 0
     private var pidBuffer = [pid_t](repeating: 0, count: 4096)
@@ -42,8 +44,8 @@ final class ProcessReader {
         rows.reserveCapacity(n)
         var nextPrev: [pid_t: Prev] = [:]
         nextPrev.reserveCapacity(n)
-        var nextPaths: [pid_t: PathEntry] = [:]
-        nextPaths.reserveCapacity(n)
+        var nextIdentities: [pid_t: Identity] = [:]
+        nextIdentities.reserveCapacity(n)
 
         for i in 0..<min(n, pidBuffer.count) {
             let pid = pidBuffer[i]
@@ -72,11 +74,11 @@ final class ProcessReader {
                 }
                 nextPrev[pid] = Prev(start: start, cpuNs: cpuNs, footprint: memory, footprintAge: age)
 
-                let path = resolvePath(pid, start: start, into: &nextPaths)
+                let id = identity(pid, bsd: bsd, into: &nextIdentities)
                 rows.append(ProcessRow(
                     pid: pid,
-                    name: name(bsd: bsd, path: path),
-                    path: path,
+                    name: id.name,
+                    path: id.path,
                     user: userName(bsd.pbi_uid),
                     threads: Int(task.pti_threadnum),
                     cpu: cpu,
@@ -88,11 +90,11 @@ final class ProcessReader {
                 var bsd = proc_bsdinfo()
                 let bsdSize = Int32(MemoryLayout<proc_bsdinfo>.size)
                 guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &bsd, bsdSize) == bsdSize else { continue }
-                let path = resolvePath(pid, start: UInt64(bsd.pbi_start_tvsec), into: &nextPaths)
+                let id = identity(pid, bsd: bsd, into: &nextIdentities)
                 rows.append(ProcessRow(
                     pid: pid,
-                    name: name(bsd: bsd, path: path),
-                    path: path,
+                    name: id.name,
+                    path: id.path,
                     user: userName(bsd.pbi_uid),
                     threads: 0,
                     cpu: 0,
@@ -103,23 +105,28 @@ final class ProcessReader {
         }
 
         previous = nextPrev      // drops entries for exited processes
-        pathCache = nextPaths
+        identityCache = nextIdentities
         return wallDelta > 0 ? rows : nil
     }
 
     // MARK: Helpers
 
-    private func resolvePath(_ pid: pid_t, start: UInt64, into next: inout [pid_t: PathEntry]) -> String {
-        if let cached = pathCache[pid], cached.start == start {
+    private func identity(_ pid: pid_t, bsd: proc_bsdinfo, into next: inout [pid_t: Identity]) -> Identity {
+        let start = UInt64(bsd.pbi_start_tvsec)
+        let comm = withUnsafeBytes(of: bsd.pbi_comm) {
+            ($0.loadUnaligned(as: UInt64.self), $0.loadUnaligned(fromByteOffset: 8, as: UInt64.self))
+        }
+        if let cached = identityCache[pid], cached.start == start, cached.comm == comm {
             next[pid] = cached
-            return cached.path
+            return cached
         }
         let len = Int(proc_pidpath(pid, &pathBuffer, UInt32(pathBuffer.count)))
         let path = len > 0
             ? String(decoding: pathBuffer[0..<len].map { UInt8(bitPattern: $0) }, as: UTF8.self)
             : ""
-        next[pid] = PathEntry(start: start, path: path)
-        return path
+        let id = Identity(start: start, comm: comm, name: name(bsd: bsd, path: path), path: path)
+        next[pid] = id
+        return id
     }
 
     private func name(bsd: proc_bsdinfo, path: String) -> String {

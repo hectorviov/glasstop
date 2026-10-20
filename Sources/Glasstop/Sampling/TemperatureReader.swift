@@ -7,12 +7,12 @@ import Foundation
 /// Primary source: SMC float keys, grouped by family. Verified on M5 Pro with load tests:
 /// `T` + lowercase cluster type per CPU cluster (Tp = "P"/Super, Tm = "M"/Performance,
 /// Te = E-cores on older chips), Tg = GPU, TB<n>T = battery. Every key costs ~0.15 ms, so
-/// they are read round-robin, `keysPerCycle` per cycle (each key refreshes every ~4 s).
+/// they are read round-robin, `keysPerCycle` per cycle (each key refreshes every ~7 s).
 ///
 /// Fallback: HID "PMU tdie" sensors (~0.75 ms each), read every few cycles.
 final class TemperatureReader {
     static let interval: TimeInterval = 1
-    static let keysPerCycle = 24
+    static let keysPerCycle = 16
     static let hidEveryNCycles = 3
     static let hidRediscoverEveryNCycles = 60
 

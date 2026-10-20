@@ -66,8 +66,16 @@ final class Sampler {
         t.setEventHandler { [weak self] in self?.tick() }
         t.resume()
         timer = t
-        temperatureReader.start { [weak self] in self?.applyTemperatures($0) }
+        temperatureReader.start { [weak self] in self?.receiveTemperatures($0) }
     }
+
+    /// Set by the window owner. While false, nothing is published to SwiftUI (no view
+    /// updates at all); snapshots queue up (bounded) and are applied when visible again.
+    @ObservationIgnored var isVisible = true {
+        didSet { if isVisible && !oldValue { flushPending() } }
+    }
+    @ObservationIgnored private var pendingSnapshots: [Snapshot] = []
+    @ObservationIgnored private var pendingTemperatures: [([TempGroupReading], Date)] = []
 
     func stop() {
         timer?.cancel()
@@ -90,10 +98,38 @@ final class Sampler {
         let snapshot = Snapshot(timestamp: Date(), duration: duration, cpu: cpu, memory: memory,
                                 gpu: gpu, processes: procs, load: LoadAverage.read())
 
-        DispatchQueue.main.async { [weak self] in self?.apply(snapshot) }
+        DispatchQueue.main.async { [weak self] in self?.receive(snapshot) }
     }
 
     // MARK: Main-thread apply
+
+    private func receive(_ s: Snapshot) {
+        // Only the newest process list matters; dropping older ones keeps the queue small.
+        if !pendingSnapshots.isEmpty, s.processes != nil {
+            pendingSnapshots[pendingSnapshots.count - 1].processes = nil
+        }
+        pendingSnapshots.append(s)
+        if pendingSnapshots.count > Self.historyCapacity {
+            pendingSnapshots.removeFirst(pendingSnapshots.count - Self.historyCapacity)
+        }
+        if isVisible { flushPending() }
+    }
+
+    /// Temperatures arrive on their own schedule; they're applied together with the next
+    /// sampler tick so the UI does one update (and one CA commit) per tick, not two.
+    private func receiveTemperatures(_ readings: [TempGroupReading]) {
+        pendingTemperatures.append((readings, Date()))
+        if pendingTemperatures.count > cpuTempHistory.capacity {
+            pendingTemperatures.removeFirst(pendingTemperatures.count - cpuTempHistory.capacity)
+        }
+    }
+
+    private func flushPending() {
+        for (readings, at) in pendingTemperatures { applyTemperatures(readings, at: at) }
+        pendingTemperatures.removeAll(keepingCapacity: true)
+        for s in pendingSnapshots { apply(s) }
+        pendingSnapshots.removeAll(keepingCapacity: true)
+    }
 
     private func apply(_ s: Snapshot) {
         if let c = s.cpu {
@@ -124,9 +160,9 @@ final class Sampler {
         tickCost = recentDurations.values.max() ?? s.duration
     }
 
-    private func applyTemperatures(_ readings: [TempGroupReading]) {
+    private func applyTemperatures(_ readings: [TempGroupReading], at date: Date) {
         temperatures = readings
-        lastTemperatureAt = Date()
+        lastTemperatureAt = date
         if let summary = TempSummary.combine(readings.filter(\.isCPU)) { cpuTempHistory.append(summary.avg) }
     }
 }
