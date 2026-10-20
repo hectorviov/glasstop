@@ -128,21 +128,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func applyState() {
         guard let panel else { return }
+        // Only touch what changed: this runs on every opacity-slider tick, and re-setting the
+        // level / collection behavior triggers window re-layout.
         let onTop = appState.alwaysOnTop
-        panel.isFloatingPanel = onTop
-        panel.level = onTop ? .floating : .normal
+        let level: NSWindow.Level = onTop ? .floating : .normal
         // On top: follow the user to every Space, including other apps' fullscreen ones.
         // Off: an ordinary window that stays on its own Space.
-        panel.collectionBehavior = onTop ? [.canJoinAllSpaces, .fullScreenAuxiliary] : []
-        panel.alphaValue = appState.opacity
-        panel.ignoresMouseEvents = appState.clickThrough
+        let behavior: NSWindow.CollectionBehavior = onTop ? [.canJoinAllSpaces, .fullScreenAuxiliary] : []
+        if panel.isFloatingPanel != onTop { panel.isFloatingPanel = onTop }
+        if panel.level != level { panel.level = level }
+        if panel.collectionBehavior != behavior { panel.collectionBehavior = behavior }
+        if panel.alphaValue != appState.opacity { panel.alphaValue = appState.opacity }
+        if panel.ignoresMouseEvents != appState.clickThrough { panel.ignoresMouseEvents = appState.clickThrough }
 
         sampler.apply(appState.samplerSettings)
-        if appState.hotKeyEnabled {
+        if appState.hotKeyEnabled != hotKey.isRegistered, appState.hotKeyEnabled {
             if !hotKey.register() {
                 NSLog("Glasstop: global hotkey %@ is unavailable (taken by another app?)", GlobalHotKey.displayString)
             }
-        } else {
+        } else if !appState.hotKeyEnabled, hotKey.isRegistered {
             hotKey.unregister()
         }
         applyCompact()
