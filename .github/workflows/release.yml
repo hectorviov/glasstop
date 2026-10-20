@@ -2,6 +2,10 @@ name: Release
 
 # Push a tag like v0.9.1 to publish a release. "Run workflow" (manual) builds a *draft*
 # release instead, for checking the pipeline without publishing anything.
+#
+# With the signing secrets set (see README → "Signing and notarization"), the app and the
+# disk image are signed with the Developer ID, notarized by Apple and stapled, so Gatekeeper
+# opens them without a warning. Without them the release is ad-hoc signed, as before.
 on:
   push:
     tags: ['v*']
@@ -17,6 +21,8 @@ permissions:
 jobs:
   release:
     runs-on: macos-latest
+    env:
+      SIGNED: ${{ secrets.MACOS_CERTIFICATE_P12 != '' && secrets.NOTARY_API_KEY != '' }}
     steps:
       - uses: actions/checkout@v7
 
@@ -40,6 +46,45 @@ jobs:
             echo "prerelease=$prerelease"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Signing keychain
+        if: env.SIGNED == 'true'
+        env:
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          NOTARY_API_KEY: ${{ secrets.NOTARY_API_KEY }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+        run: |
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          keychain_password=$(uuidgen)
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          printf '%s' "$MACOS_CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$keychain" -P "$MACOS_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/certificate.p12"
+          # Developer ID intermediate, in case the .p12 doesn't carry the chain.
+          curl -fsSL https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer -o "$RUNNER_TEMP/DeveloperIDG2CA.cer"
+          security import "$RUNNER_TEMP/DeveloperIDG2CA.cer" -k "$keychain" || true
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+
+          identity=$(security find-identity -v -p codesigning "$keychain" \
+            | sed -nE 's/.*"(Developer ID Application: [^"]+)".*/\1/p' | head -1)
+          if [[ -z "$identity" ]]; then
+            echo "::error::The certificate has no 'Developer ID Application' identity"; exit 1
+          fi
+          echo "Signing as: $identity"
+          printf '%s' "$NOTARY_API_KEY" > "$RUNNER_TEMP/notary-key.p8"
+          {
+            echo "SIGN_IDENTITY=$identity"
+            echo "SIGNING_KEYCHAIN=$keychain"
+            echo "NOTARY_KEY_PATH=$RUNNER_TEMP/notary-key.p8"
+            echo "NOTARY_KEY_ID=$NOTARY_KEY_ID"
+            echo "NOTARY_ISSUER_ID=$NOTARY_ISSUER_ID"
+          } >> "$GITHUB_ENV"
+
       - name: Build
         env:
           VERSION: ${{ steps.version.outputs.version }}
@@ -48,6 +93,14 @@ jobs:
           swift --version
           ./scripts/bundle.sh
 
+      - name: Notarize app
+        if: env.SIGNED == 'true'
+        run: |
+          ditto -c -k --keepParent build/Glasstop.app "$RUNNER_TEMP/Glasstop-notarize.zip"
+          ./scripts/notarize.sh "$RUNNER_TEMP/Glasstop-notarize.zip"
+          xcrun stapler staple build/Glasstop.app       # works offline once copied out of the DMG
+          spctl --assess --type execute --verbose=2 build/Glasstop.app
+
       - name: Disk image
         env:
           VERSION: ${{ steps.version.outputs.version }}
@@ -55,10 +108,15 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/dmgbuild"     # Homebrew Python refuses global pip installs
           "$RUNNER_TEMP/dmgbuild/bin/pip" install --quiet "dmgbuild==1.6.7"
           export PATH="$RUNNER_TEMP/dmgbuild/bin:$PATH"
-          dmg="Glasstop-$VERSION.dmg"
-          ./scripts/make-dmg.sh "$dmg"
-          shasum -a 256 "$dmg" > "$dmg.sha256"
-          cat "$dmg.sha256"
+          ./scripts/make-dmg.sh "Glasstop-$VERSION.dmg"
+
+      - name: Notarize disk image
+        if: env.SIGNED == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          ./scripts/notarize.sh "Glasstop-$VERSION.dmg"
+          spctl --assess --type open --context context:primary-signature --verbose=2 "Glasstop-$VERSION.dmg"
 
       - name: Publish
         env:
@@ -67,14 +125,27 @@ jobs:
           DRAFT: ${{ steps.version.outputs.draft }}
           PRERELEASE: ${{ steps.version.outputs.prerelease }}
         run: |
+          dmg="Glasstop-$VERSION.dmg"
+          shasum -a 256 "$dmg" > "$dmg.sha256"
+          cat "$dmg.sha256"
           cat > notes.md <<'EOF'
           **Install:** download `Glasstop-*.dmg`, open it and drag Glasstop to Applications.
           Requires an Apple silicon Mac with macOS 14 Sonoma or later.
+          EOF
+          if [[ "$SIGNED" != "true" ]]; then
+            cat >> notes.md <<'EOF'
 
-          The app is ad-hoc signed, not notarized, so macOS blocks the first launch: open it once,
+          This build is ad-hoc signed, not notarized, so macOS blocks the first launch: open it once,
           then go to System Settings → Privacy & Security and click **Open Anyway**
           (or run `xattr -dr com.apple.quarantine /Applications/Glasstop.app`).
           EOF
-          gh release create "v$VERSION" "Glasstop-$VERSION.dmg" "Glasstop-$VERSION.dmg.sha256" \
+          fi
+          gh release create "v$VERSION" "$dmg" "$dmg.sha256" \
             --title "Glasstop $VERSION" --target "$GITHUB_SHA" \
             --notes-file notes.md --generate-notes $DRAFT $PRERELEASE
+
+      - name: Clean up signing material
+        if: always()
+        run: |
+          [[ -n "${SIGNING_KEYCHAIN:-}" ]] && security delete-keychain "$SIGNING_KEYCHAIN" || true
+          rm -f "$RUNNER_TEMP/notary-key.p8" "$RUNNER_TEMP/certificate.p12"

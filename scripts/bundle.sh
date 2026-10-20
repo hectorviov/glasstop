@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Builds a release binary and wraps it in build/Glasstop.app (ad-hoc signed).
+# Builds a release binary and wraps it in build/Glasstop.app. Ad-hoc signed by default;
+# SIGN_IDENTITY="Developer ID Application: …" signs for distribution (hardened runtime +
+# secure timestamp, both required for notarization).
 #
 # Usage: scripts/bundle.sh [--install]
 #   --install   also copy the app to /Applications (quits a running Glasstop first)
@@ -23,7 +25,12 @@ cp Resources/Info.plist "$APP/Contents/Info.plist"
 [[ -n "${VERSION:-}" ]] && /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP/Contents/Info.plist"
 [[ -n "${BUILD_NUMBER:-}" ]] && /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "$APP/Contents/Info.plist"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
-codesign --force --sign - "$APP"
+if [[ "${SIGN_IDENTITY:--}" == "-" ]]; then
+    codesign --force --sign - "$APP"
+else
+    codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$APP"
+    codesign --verify --strict --verbose=2 "$APP"
+fi
 
 echo "Built $APP ($(du -sh "$APP" | cut -f1)), version $(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
 

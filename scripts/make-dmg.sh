@@ -6,6 +6,7 @@
 # scripting and it works headless (CI).
 #
 # Usage: scripts/make-dmg.sh [output.dmg]     (default build/Glasstop-<version>.dmg)
+#   SIGN_IDENTITY="Developer ID Application: …" also signs the disk image.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -25,5 +26,9 @@ tiffutil -cathidpicheck "$WORK/background.png" "$WORK/background@2x.png" -out "$
 dmgbuild -s scripts/dmg-settings.py \
     -D app="$APP" -D background="$WORK/background.tiff" \
     "Glasstop $VERSION" "$DMG"
+
+if [[ "${SIGN_IDENTITY:--}" != "-" ]]; then
+    codesign --force --timestamp --sign "$SIGN_IDENTITY" "$DMG"
+fi
 
 echo "Built $DMG ($(du -h "$DMG" | cut -f1))"

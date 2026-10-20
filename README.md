@@ -11,9 +11,9 @@ Download the latest `Glasstop-x.y.z.dmg` from
 [Releases](https://github.com/hectorviov/glasstop/releases/latest), open it and drag Glasstop
 to the Applications shortcut. Needs an Apple silicon Mac with macOS 14 Sonoma or later.
 
-Release builds are ad-hoc signed, not notarized, so macOS blocks the first launch: open the app
-once, then click **Open Anyway** in System Settings → Privacy & Security (or run
-`xattr -dr com.apple.quarantine /Applications/Glasstop.app`).
+Releases are signed with a Developer ID and notarized by Apple once the signing secrets are set
+up (see below). A release built without them is ad-hoc signed: macOS blocks its first launch,
+so open it once, then click **Open Anyway** in System Settings → Privacy & Security.
 
 ## Build from source
 
@@ -65,6 +65,41 @@ drag-to-Applications disk image (`scripts/make-dmg.sh`, layout in `scripts/dmg-s
 with a SHA-256 checksum and publishes a GitHub release with notes generated from the merged pull requests.
 A tag with a suffix (`v1.0.0-beta.1`) becomes a pre-release. Running the workflow by hand
 (Actions → Release → Run workflow) makes a draft release instead, which only you can see.
+
+### Signing and notarization
+
+The Release workflow signs and notarizes when these repository secrets exist (Settings →
+Secrets and variables → Actions); without them it falls back to an ad-hoc build.
+
+| Secret | What it is |
+|---|---|
+| `MACOS_CERTIFICATE_P12` | Your **Developer ID Application** certificate + private key, exported as `.p12`, base64-encoded |
+| `MACOS_CERTIFICATE_PASSWORD` | The password chosen when exporting the `.p12` |
+| `NOTARY_API_KEY` | Contents of an App Store Connect API key file (`AuthKey_XXXXXXXXXX.p8`) |
+| `NOTARY_KEY_ID` | That key's Key ID |
+| `NOTARY_ISSUER_ID` | The Issuer ID shown above the keys list |
+
+1. **Certificate** (Account Holder or Admin): Xcode → Settings → Accounts → your team → Manage
+   Certificates → **+** → *Developer ID Application*. Then in Keychain Access → My
+   Certificates, right-click "Developer ID Application: …" → Export as `.p12` with a password.
+2. **API key:** [App Store Connect](https://appstoreconnect.apple.com/access/integrations/api)
+   → Users and Access → Integrations → Team Keys → **+**, role *Developer*. Download the `.p8`
+   (only once) and note the Key ID and Issuer ID.
+3. **Secrets** (values are read from stdin or files, so they don't land in shell history):
+   ```bash
+   base64 -i DeveloperID.p12 | gh secret set MACOS_CERTIFICATE_P12
+   gh secret set MACOS_CERTIFICATE_PASSWORD
+   gh secret set NOTARY_API_KEY < AuthKey_XXXXXXXXXX.p8
+   gh secret set NOTARY_KEY_ID
+   gh secret set NOTARY_ISSUER_ID
+   ```
+4. Check it with a draft: Actions → Release → Run workflow. The log shows "Signing as:
+   Developer ID Application: …", two "Notarization …: Accepted" lines and `spctl` reporting
+   *source=Notarized Developer ID*.
+
+Locally: `SIGN_IDENTITY="Developer ID Application: …" ./scripts/bundle.sh`, then
+`scripts/make-dmg.sh` (signs the image too) and `scripts/notarize.sh <file>` with a profile from
+`xcrun notarytool store-credentials` (`NOTARY_PROFILE=name`).
 
 Other scripts: `swift scripts/make-icon.swift` regenerates `Resources/AppIcon.icns`;
 `scripts/soak.sh [hours] [interval_min]` runs the reliability soak (results in `soak/`).
