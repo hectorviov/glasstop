@@ -1,0 +1,2 @@
+time,pid,footprint_mb,cpu_pct,leaks,stalls
+2026-10-20T08:15:42,21303,70.0,2.43,417,0

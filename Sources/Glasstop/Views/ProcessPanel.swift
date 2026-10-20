@@ -43,6 +43,11 @@ struct ProcessPanel: View {
             .help("View options")
             SearchField(text: $filter, placeholder: "filter (⌘F)", focusRequest: appState.focusFilterRequest)
                 .frame(width: 200)
+                // The search bezel is translucent by design; a solid backing keeps the material
+                // (and whatever is behind the window) from showing through.
+                .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color(nsColor: .controlBackgroundColor))
+                    .padding(1))
         } content: {
             ProcessTable(rows: rows, tree: tree)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -598,6 +603,12 @@ final class TextLineCache {
     }
 }
 
+/// Search field drawn like in a normal window. Inside the frosted material AppKit renders it
+/// with vibrancy, which made the box translucent.
+final class OpaqueSearchField: NSSearchField {
+    override var allowsVibrancy: Bool { false }
+}
+
 /// The system search field (magnifier, clear button while there's text, Esc clears), bound to
 /// a SwiftUI string. `focusRequest` changes (⌘F) make it first responder.
 struct SearchField: NSViewRepresentable {
@@ -608,7 +619,7 @@ struct SearchField: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(text: $text) }
 
     func makeNSView(context: Context) -> NSSearchField {
-        let field = NSSearchField()
+        let field = OpaqueSearchField()
         field.placeholderString = placeholder
         field.controlSize = .small
         field.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
