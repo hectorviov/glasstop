@@ -114,3 +114,8 @@ Notes:
 | Disk throughput | IOKit `IOBlockStorageDriver` → `Statistics` → `Bytes (Read)` / `Bytes (Write)` |
 | Volume usage | `getfsstat(MNT_NOWAIT)` to list mounts, `statfs` on local browsable volumes only (a hung network mount can't block sampling) |
 | Load average / uptime | `getloadavg`, `kern.boottime` |
+
+## License
+
+[Apache License 2.0](LICENSE). See [NOTICE](NOTICE) for attributions (the Lazy CPU sort is
+adapted from [btop](https://github.com/aristocratos/btop)).

@@ -1,0 +1,9 @@
+Glasstop
+Copyright 2026 Hector Villarreal
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+The "Lazy" CPU sort in Sources/Glasstop/Views/ProcessPanel.swift is adapted from the
+"cpu lazy" process sorting in btop (src/btop_shared.cpp, proc_sorter),
+https://github.com/aristocratos/btop, Copyright 2021 Aristocratos,
+licensed under the Apache License, Version 2.0.
