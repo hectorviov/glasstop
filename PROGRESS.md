@@ -59,6 +59,13 @@ What changed overnight, in one line each:
   way the panels stretch to fill the height (their graphs absorb the space). The decision reuses
   layout geometry (panel heights minus graph stretch = needed height) instead of `ViewThatFits`,
   which re-measured both arrangements every refresh (~2% CPU). Minimum window height 720.
+- **Network adapter dropdown** in the net panel's title: All Wi-Fi & Ethernet (default) or one
+  interface (adapters by SystemConfiguration name; VPN tunnels / VM bridges under "Other").
+- **Dock app, no menu bar item** (your call): regular activation policy, `LSUIElement` removed,
+  the status item is gone. Its options moved to the app's own menu bar — Window → Keep on Top,
+  Full/Compact, Click-Through, Opacity (30–100%) — and Settings has an opacity slider and Keep on
+  top. Closing the window keeps Glasstop in the Dock; clicking the Dock icon reopens it and turns
+  click-through off. Verified: `lsappinfo` type Foreground (regular), menus present.
 
 ## Decisions to review
 - **CPU budget "< 1% of one core at 0.5 s" isn't reachable with this design.** Sampling alone is
@@ -74,15 +81,16 @@ What changed overnight, in one line each:
 
   Hidden/minimized/covered: ~1.3% at any setting (SwiftUI isn't updated at all). Defaults are now
   1 s / 1 s (your call, 2026-10-20); change them with the header arrows or in Settings.
-- **Accessory app (no Dock icon / ⌘Tab)** — required for floating over fullscreen apps. The menu
-  bar item is therefore always present (it's the way back from click-through/hidden). Closing the
-  window hides it; quit from the menu bar item or ⌘Q.
+- **Dock app (your call, 2026-10-20)** — was an accessory app so the window could float over
+  other apps' fullscreen Spaces. A regular app's windows can't join those Spaces, so Keep on Top
+  now floats above ordinary windows on every desktop but not over fullscreen apps. If you want
+  that back: accessory mode only while Keep on Top is on (Dock icon disappears then).
 - **Temperatures from SMC key families**, mapped by load tests: `Tp*` Super cluster, `Tm*`
   Performance cluster, `Tg*` GPU, `TB*T` battery. 16 keys/s round-robin → each sensor refreshes
   every ~7 s (~0.25% CPU). Shown per cluster (avg; max in the sensors panel), not per core — there's
   no reliable sensor→core mapping. HID `PMU tdie*` is the fallback (0.75 ms/sensor, 5× slower).
 - **App Nap opt-out** (`userInitiatedAllowingIdleSystemSleep`) so a covered window doesn't
-  throttle sampling / the menu bar CPU %. The system can still idle-sleep.
+  throttle sampling (graphs would skip samples). The system can still idle-sleep.
 - **Global hotkey** default off; combination ⌃⌥⌘M (Carbon `RegisterEventHotKey`, no permission).
 - **Version 0.9.0** (not 1.0) until the soak and your review are done.
 - **Leaks**: `leaks` reports ~414 "leaks" (~20 KB), all three copies of one Apple App Intents XPC

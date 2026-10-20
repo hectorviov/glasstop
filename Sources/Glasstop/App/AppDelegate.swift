@@ -8,12 +8,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var settingsWindow: NSWindow?
     private var panel: NSPanel?
     private var hosting: NSView?
-    private var statusItem: StatusItemController?
     private lazy var hotKey = GlobalHotKey { [weak self] in self?.togglePanel() }
     private var appliedCompact = false
     private var menuItems: [String: NSMenuItem] = [:]
-    /// Opts out of App Nap (timer throttling while the window is covered would make the menu
-    /// bar CPU % lag); the system can still idle-sleep.
+    private var opacityItems: [(Double, NSMenuItem)] = []
+    private static let opacitySteps: [Double] = [1, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3]
+    /// Opts out of App Nap (timer throttling while the window is covered would make the
+    /// history graphs skip samples); the system can still idle-sleep.
     private var activity: NSObjectProtocol?
 
     private static func frameName(compact: Bool) -> String { compact ? "GlasstopCompactPanel" : "GlasstopMainPanel" }
@@ -71,15 +72,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
         }
 
-        let status = StatusItemController(appState: appState)
-        status.togglePanel = { [weak self] in self?.togglePanel() }
-        status.isPanelVisible = { [weak self] in self?.panel?.isVisible == true }
-        status.openSettings = { [weak self] in self?.showSettings(nil) }
-        statusItem = status
-        sampler.onTick = { [weak status] snapshot in
-            if let cpu = snapshot.cpu { status?.update(cpu: cpu.total) }
-        }
-
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification,
                                                           object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.sampler.resetAfterWake() }
@@ -94,10 +86,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         sampler.start()
     }
 
-    /// The panel's close button hides it; Glasstop keeps running in the menu bar.
+    /// The panel's close button hides it; Glasstop keeps running in the Dock.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
+    /// Dock icon click: bring the window back, and make it clickable again (the Dock is the
+    /// way out of click-through).
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if appState.clickThrough { appState.setClickThrough(false) }
+        if panel?.isMiniaturized == true { panel?.deminiaturize(nil) }
         showPanel()
         return true
     }
@@ -155,6 +151,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         menuItems["full"]?.state = appState.compact ? .off : .on
         menuItems["compact"]?.state = appState.compact ? .on : .off
         menuItems["clickThrough"]?.state = appState.clickThrough ? .on : .off
+        for (step, menuItem) in opacityItems {
+            menuItem.state = abs(appState.opacity - step) < 0.005 ? .on : .off
+        }
     }
 
     /// Each mode remembers its own frame. SwiftUI re-lays out on the next runloop pass, so
@@ -181,12 +180,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
-    // MARK: Menu (not visible for an accessory app, but provides the key equivalents)
+    // MARK: Menu
 
     @objc private func toggleAlwaysOnTop(_ sender: Any?) { appState.setAlwaysOnTop(!appState.alwaysOnTop) }
     @objc private func showFull(_ sender: Any?) { appState.setCompact(false) }
     @objc private func showCompact(_ sender: Any?) { appState.setCompact(true) }
     @objc private func toggleClickThrough(_ sender: Any?) { appState.setClickThrough(!appState.clickThrough) }
+    @objc private func setOpacity(_ sender: NSMenuItem) { appState.setOpacity(sender.representedObject as? Double ?? 1) }
 
     @objc private func showSettings(_ sender: Any?) {
         if settingsWindow == nil {
@@ -241,6 +241,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         windowMenu.addItem(item("full", "Full Mode", #selector(showFull(_:)), "1"))
         windowMenu.addItem(item("compact", "Compact Mode", #selector(showCompact(_:)), "2"))
         windowMenu.addItem(item("clickThrough", "Click-Through", #selector(toggleClickThrough(_:)), ""))
+        let opacityItem = NSMenuItem(title: "Opacity", action: nil, keyEquivalent: "")
+        let opacityMenu = NSMenu(title: "Opacity")
+        for step in Self.opacitySteps {
+            let menuItem = NSMenuItem(title: "\(Int(step * 100))%", action: #selector(setOpacity(_:)), keyEquivalent: "")
+            menuItem.target = self
+            menuItem.representedObject = step
+            opacityMenu.addItem(menuItem)
+            opacityItems.append((step, menuItem))
+        }
+        opacityItem.submenu = opacityMenu
+        windowMenu.addItem(opacityItem)
         windowMenu.addItem(.separator())
         windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
         windowMenu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
@@ -248,6 +259,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         main.addItem(windowItem)
 
         NSApp.mainMenu = main
+        NSApp.windowsMenu = windowMenu
     }
 
     private func item(_ key: String, _ title: String, _ action: Selector, _ keyEquivalent: String) -> NSMenuItem {

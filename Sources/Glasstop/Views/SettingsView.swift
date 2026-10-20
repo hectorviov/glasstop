@@ -1,7 +1,7 @@
 import ServiceManagement
 import SwiftUI
 
-/// Settings window (status menu → Settings…, or ⌘,). Changes apply immediately.
+/// Settings window (Glasstop → Settings…, ⌘,). Changes apply immediately.
 struct SettingsView: View {
     @Environment(AppState.self) private var appState
     @State private var loginStatus = SMAppService.mainApp.status
@@ -27,6 +27,20 @@ struct SettingsView: View {
                 Text("100 ms steps (also the − / + arrows in the header). Faster refresh costs more CPU; 1 s is the default for both.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+
+            Section("Window") {
+                LabeledContent("Opacity") {
+                    HStack {
+                        Slider(value: Binding(get: { appState.opacity }, set: { appState.setOpacity($0) }),
+                               in: 0.3...1)
+                        Text("\(Int((appState.opacity * 100).rounded()))%")
+                            .monospacedDigit()
+                            .frame(width: 38, alignment: .trailing)
+                    }
+                }
+                Toggle("Keep on top", isOn: Binding(get: { appState.alwaysOnTop },
+                                                    set: { appState.setAlwaysOnTop($0) }))
             }
 
             Section("General") {

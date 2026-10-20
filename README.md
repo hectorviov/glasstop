@@ -13,21 +13,22 @@ swift run                       # run from terminal
 open build/Glasstop.app
 ```
 
-Glasstop runs as an accessory app (no Dock icon) so it can float over other apps'
-fullscreen Spaces. Its handle is the **menu bar item** showing CPU %: click to show/hide the
-window, right-click for options. Closing the window hides it; quit from the menu (⌘Q).
+Glasstop is a regular Dock app. Closing the window keeps it running; click the Dock icon to bring
+it back (that also turns click-through off). Quit with ⌘Q. Keep on Top floats the window above
+other windows on every desktop (macOS doesn't let a Dock app's windows over other apps'
+fullscreen Spaces).
 
 | Shortcut | Action |
 |---|---|
-| ⌘T | Keep on top (all Spaces, incl. fullscreen apps) |
+| ⌘T | Keep on top (all desktops) |
 | ⌘1 / ⌘2 | Full / compact mode (each remembers its own size) |
 | ⌘F | Focus the process filter |
 | − / + (header) | Refresh interval in 100 ms steps (hold to repeat, ⌥-click for 1 s), 100 ms–5 s, default 1000 ms |
 | ⌘, | Settings (refresh interval, history length, process refresh, launch at login, hotkey) |
 | ⌃⌥⌘M | Show/hide from anywhere (optional global hotkey, off by default) |
 
-Status menu: opacity slider and click-through (the window ignores the mouse; turn it off from
-the menu bar item). Process table: right-click for Copy PID / Copy Path / Reveal in Finder /
+Window menu: opacity (also a slider in Settings) and click-through (the window ignores the
+mouse; click the Dock icon to turn it off). Process table: right-click for Copy PID / Copy Path / Reveal in Finder /
 Terminate / Force Kill; the filter button has only-my-processes, hide-idle and tree view.
 Filter text, sort order and column layout persist. The net panel's title is a dropdown: all Wi-Fi/Ethernet adapters
 (default) or one interface (adapters by name, plus VPN tunnels and VM bridges).
