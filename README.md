@@ -74,4 +74,7 @@ Notes:
 | Processes | `proc_listallpids`, `proc_pidinfo(PROC_PIDTASKALLINFO)`, `proc_pid_rusage`, `proc_pidpath` |
 | GPU utilization | IOAccelerator `PerformanceStatistics` → `Device Utilization %` |
 | Temperatures | AppleSMC float keys (`Tp*` Super cluster, `Tm*` Performance cluster, `Tg*` GPU, `TB*T` battery); HID `PMU tdie*` fallback |
+| Network | sysctl `IFMIB_IFDATA` (`ifmibdata`, 64-bit counters) for `en*` interfaces — `NET_RT_IFLIST2` byte counters come back truncated to 32 bits on macOS 27 |
+| Disk throughput | IOKit `IOBlockStorageDriver` → `Statistics` → `Bytes (Read)` / `Bytes (Write)` |
+| Volume usage | `getfsstat(MNT_NOWAIT)` to list mounts, `statfs` on local browsable volumes only (a hung network mount can't block sampling) |
 | Load average / uptime | `getloadavg`, `kern.boottime` |

@@ -241,7 +241,7 @@ struct ProcessTable: NSViewRepresentable {
                 guard let view = tableView.rowView(atRow: i, makeIfNecessary: false) as? ProcessRowView else { continue }
                 view.depth = depths[i]
                 view.process = rows[i]
-                if forceRedraw { view.needsDisplay = true }
+                if forceRedraw { view.redrawContent() }
             }
         }
 
@@ -440,26 +440,91 @@ struct ProcessTable: NSViewRepresentable {
     }
 }
 
-/// Draws one process row (all columns) in a single pass, at the table's column positions.
+/// One process row. AppKit draws the selection highlight as its own view *above* the row's
+/// layer, so the text lives in a subview (`RowContentView`), which stays above the highlight.
+/// The row itself has no bitmap: the stripe is just its layer's background color.
 final class ProcessRowView: NSTableRowView {
-    weak var table: NSTableView?
+    weak var table: NSTableView? {
+        didSet { content.table = table }
+    }
     var process: ProcessRow? {
-        didSet { if process != oldValue { needsDisplay = true } }
+        get { content.process }
+        set { content.process = newValue }
+    }
+    var depth: Int {
+        get { content.depth }
+        set { content.depth = newValue }
     }
     var striped = false {
         didSet { if striped != oldValue { needsDisplay = true } }
     }
-    var depth = 0 {
-        didSet { if depth != oldValue { needsDisplay = true } }
-    }
-    private static let indentPerLevel: CGFloat = 10
-
-    private static let font = NSFont.monospacedDigitSystemFont(ofSize: 11.5, weight: .regular)
+    private let content = RowContentView()
 
     init(identifier: NSUserInterfaceItemIdentifier) {
         super.init(frame: .zero)
         self.identifier = identifier
+        content.autoresizingMask = [.width, .height]
+        addSubview(content)
     }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    override func layout() {
+        super.layout()
+        content.frame = bounds
+    }
+
+    override var isSelected: Bool {
+        didSet { if isSelected != oldValue { content.selected = isSelected && isEmphasized } }
+    }
+    override var isEmphasized: Bool {
+        didSet { if isEmphasized != oldValue { content.selected = isSelected && isEmphasized } }
+    }
+
+    /// Inside the window's frosted material AppKit can blend label colors with vibrancy, which
+    /// rendered alternate (striped vs. clear) rows at visibly different contrast.
+    override var allowsVibrancy: Bool { false }
+
+    override var wantsUpdateLayer: Bool { true }
+
+    /// Translucent stripes (instead of NSTableView's opaque alternating colors) so the
+    /// window's material shows through.
+    override func updateLayer() {
+        var color: CGColor?
+        if striped {
+            effectiveAppearance.performAsCurrentDrawingAppearance {
+                color = NSColor.labelColor.withAlphaComponent(0.045).cgColor
+            }
+        }
+        layer?.backgroundColor = color
+    }
+
+    func redrawContent() { content.needsDisplay = true }
+
+    override func accessibilityLabel() -> String? {
+        guard let p = process else { return nil }
+        return "\(p.name), PID \(p.pid), CPU \(String(format: "%.1f", p.cpu)) percent, memory \(formatBytes(p.memory))"
+    }
+}
+
+/// Draws all columns of one row in a single pass, at the table's column positions.
+final class RowContentView: NSView {
+    weak var table: NSTableView?
+    var process: ProcessRow? {
+        didSet { if process != oldValue { needsDisplay = true } }
+    }
+    var depth = 0 {
+        didSet { if depth != oldValue { needsDisplay = true } }
+    }
+    var selected = false {
+        didSet { if selected != oldValue { needsDisplay = true } }
+    }
+    private static let indentPerLevel: CGFloat = 10
+    private static let font = NSFont.monospacedDigitSystemFont(ofSize: 11.5, weight: .regular)
+
+    override var isFlipped: Bool { true }
+    override var allowsVibrancy: Bool { false }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }   // clicks select the row
 
     /// On wide-gamut/EDR displays AppKit gives layer-backed views a 16-bit float backing store;
     /// for ~40 table-wide rows that was ~38 MB. Plain text needs only 8 bits per channel.
@@ -469,34 +534,13 @@ final class ProcessRowView: NSTableRowView {
         return layer
     }
 
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
-
-    override var isSelected: Bool {
-        didSet { if isSelected != oldValue { needsDisplay = true } }
-    }
-
-    /// Inside the window's frosted material AppKit can blend label colors with vibrancy, which
-    /// rendered alternate (striped vs. clear) rows at visibly different contrast. Rows draw
-    /// plain colors.
-    override var allowsVibrancy: Bool { false }
-
-    /// Translucent stripes (instead of NSTableView's opaque alternating colors) so the
-    /// window's material shows through.
-    override func drawBackground(in dirtyRect: NSRect) {
-        guard striped else { return }
-        NSColor.labelColor.withAlphaComponent(0.045).setFill()
-        dirtyRect.fill()
-    }
-
     override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)   // background + selection
         guard let process, let table, let ctx = NSGraphicsContext.current?.cgContext else { return }
-        let selected = isSelected && isEmphasized
         let baseline = floor((bounds.height - (Self.font.ascender - Self.font.descender)) / 2 + Self.font.ascender)
         let inset = table.intercellSpacing.width / 2
 
         ctx.saveGState()
-        ctx.textMatrix = CGAffineTransform(scaleX: 1, y: -1)   // row views are flipped
+        ctx.textMatrix = CGAffineTransform(scaleX: 1, y: -1)   // flipped view
         for (index, tableColumn) in table.tableColumns.enumerated() {
             guard let column = ProcessTable.Column(rawValue: tableColumn.identifier.rawValue) else { continue }
             let columnRect = table.rect(ofColumn: index)
@@ -513,16 +557,13 @@ final class ProcessRowView: NSTableRowView {
             let line = TextLineCache.shared.line(text, width: width, column: column, font: Self.font)
             let lineWidth = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
             let dx = column.alignment == .right ? max(width - lineWidth, 0) : 0
+            // On the accent-colored (focused) selection, white text; otherwise the normal colors
+            // stay readable on the grey highlight.
             ctx.setFillColor((selected ? NSColor.alternateSelectedControlTextColor : color).cgColor)
             ctx.textPosition = CGPoint(x: x + dx, y: baseline)
             CTLineDraw(line, ctx)
         }
         ctx.restoreGState()
-    }
-
-    override func accessibilityLabel() -> String? {
-        guard let p = process else { return nil }
-        return "\(p.name), PID \(p.pid), CPU \(String(format: "%.1f", p.cpu)) percent, memory \(formatBytes(p.memory))"
     }
 }
 

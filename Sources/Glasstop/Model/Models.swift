@@ -111,6 +111,9 @@ struct Snapshot {
     var cpu: CPUReading?
     var memory: MemoryReading?
     var gpu: Double?
+    var network: NetworkReading?
+    var diskIO: DiskIOReading?
+    var volumes: [VolumeUsage]?
     var processes: [ProcessRow]?
     var load: LoadAverage
 }

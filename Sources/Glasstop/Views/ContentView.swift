@@ -1,10 +1,12 @@
 import SwiftUI
 
-/// btop-style arrangement: CPU box across the top; memory + sensors on the left and the
-/// process table on the right below it. Compact mode (⌘2) drops the table and puts memory
-/// and sensors side by side. The header occupies the transparent titlebar row.
+/// btop-style arrangement: CPU box across the top; below it a 2×2 block on the left
+/// (mem | disks over sensors | net) and the process table on the right. Compact mode (⌘2)
+/// drops the table: mem, sensors and disks+net side by side. The header occupies the
+/// transparent titlebar row.
 struct ContentView: View {
-    static let minWidth: CGFloat = 860
+    static let minWidth: CGFloat = 1040
+    static let sideColumnWidth: CGFloat = 250
     static let minHeight: CGFloat = 680
 
     @Environment(AppState.self) private var appState
@@ -18,6 +20,10 @@ struct ContentView: View {
                 HStack(alignment: .top, spacing: 10) {
                     MemoryPanel().frame(maxHeight: .infinity, alignment: .top)
                     SensorsPanel().frame(maxHeight: .infinity, alignment: .top)
+                    VStack(spacing: 8) {
+                        DiskPanel()
+                        NetworkPanel()
+                    }
                 }
                 .fixedSize(horizontal: false, vertical: true)   // equal-height panels
             } else {
@@ -27,7 +33,13 @@ struct ContentView: View {
                         SensorsPanel()
                         Spacer(minLength: 0)
                     }
-                    .frame(width: 280)
+                    .frame(width: Self.sideColumnWidth)
+                    VStack(spacing: 8) {
+                        DiskPanel()
+                        NetworkPanel()
+                        Spacer(minLength: 0)
+                    }
+                    .frame(width: Self.sideColumnWidth)
                     ProcessPanel()
                 }
             }

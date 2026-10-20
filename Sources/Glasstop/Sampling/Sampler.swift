@@ -27,6 +27,13 @@ final class Sampler {
     private(set) var gpuUsage: Double?
     /// Same time axis as `cpuHistory` (sampled every tick), for the mirrored CPU/GPU graph.
     private(set) var gpuHistory: RingBuffer<Double>
+    private(set) var network: NetworkReading?
+    private(set) var netRxHistory: RingBuffer<Double>       // bytes/s
+    private(set) var netTxHistory: RingBuffer<Double>
+    private(set) var diskIO: DiskIOReading?
+    private(set) var diskReadHistory: RingBuffer<Double>    // bytes/s
+    private(set) var diskWriteHistory: RingBuffer<Double>
+    private(set) var volumes: [VolumeUsage] = []
     private(set) var temperatures: [TempGroupReading] = []
     private(set) var cpuTempHistory: RingBuffer<Double>
     private(set) var lastTemperatureAt = Date.distantPast
@@ -60,6 +67,10 @@ final class Sampler {
     @ObservationIgnored private let memoryReader = MemoryReader()
     @ObservationIgnored private let processReader = ProcessReader()
     @ObservationIgnored private let gpuReader = GPUReader()
+    @ObservationIgnored private let networkReader = NetworkReader()
+    @ObservationIgnored private let diskReader = DiskReader()
+    @ObservationIgnored private var lastVolumesNs: UInt64 = 0
+    static let volumesEvery: TimeInterval = 10
     @ObservationIgnored private let temperatureReader: TemperatureReader
 
     init(settings: SamplerSettings = .load()) {
@@ -70,6 +81,10 @@ final class Sampler {
         cpuHistory = RingBuffer(capacity: settings.historyCapacity)
         memoryHistory = RingBuffer(capacity: settings.historyCapacity)
         gpuHistory = RingBuffer(capacity: settings.historyCapacity)
+        netRxHistory = RingBuffer(capacity: settings.historyCapacity)
+        netTxHistory = RingBuffer(capacity: settings.historyCapacity)
+        diskReadHistory = RingBuffer(capacity: settings.historyCapacity)
+        diskWriteHistory = RingBuffer(capacity: settings.historyCapacity)
         cpuTempHistory = RingBuffer(capacity: 2)
         temperatureReader = TemperatureReader(coreGroups: system.coreGroups)
         cpuTempHistory = RingBuffer(capacity: temperatureHistoryCapacity)
@@ -98,6 +113,10 @@ final class Sampler {
         cpuHistory = cpuHistory.resized(to: new.historyCapacity)
         memoryHistory = memoryHistory.resized(to: new.historyCapacity)
         gpuHistory = gpuHistory.resized(to: new.historyCapacity)
+        netRxHistory = netRxHistory.resized(to: new.historyCapacity)
+        netTxHistory = netTxHistory.resized(to: new.historyCapacity)
+        diskReadHistory = diskReadHistory.resized(to: new.historyCapacity)
+        diskWriteHistory = diskWriteHistory.resized(to: new.historyCapacity)
         perCoreHistory = perCoreHistory.map { $0.resized(to: new.historyCapacity) }
         cpuTempHistory = cpuTempHistory.resized(to: temperatureHistoryCapacity)
         lastReceiveUptimeNs = 0            // a slower interval is not a stall
@@ -131,6 +150,8 @@ final class Sampler {
         queue.async { [weak self] in
             self?.cpuReader.reset()
             self?.processReader.reset()
+            self?.networkReader.reset()
+            self?.diskReader.reset()
         }
         temperatureReader.reset()
         lastReceiveUptimeNs = 0
@@ -145,11 +166,20 @@ final class Sampler {
         let cpu = cpuReader.sample()
         let memory = memoryReader.sample()
         let gpu = gpuReader.sample()        // ~0.2 ms: every tick, so it shares the CPU graph's time axis
+        let network = networkReader.sample()  // ~0.1 ms
+        let diskIO = diskReader.sampleIO()    // ~0.3 ms
+        var volumes: [VolumeUsage]?
+        let nowNs = DispatchTime.now().uptimeNanoseconds
+        if lastVolumesNs == 0 || Double(nowNs - lastVolumesNs) / 1e9 >= Self.volumesEvery {
+            volumes = diskReader.volumes()  // ~0.3 ms, local volumes only
+            lastVolumesNs = nowNs
+        }
         let procs = tickCount % processEveryNTicks == 0 ? processReader.sample() : nil
 
         let duration = Double(DispatchTime.now().uptimeNanoseconds - startNs) / 1e9
         let snapshot = Snapshot(timestamp: Date(), duration: duration, cpu: cpu, memory: memory,
-                                gpu: gpu, processes: procs, load: LoadAverage.read())
+                                gpu: gpu, network: network, diskIO: diskIO, volumes: volumes,
+                                processes: procs, load: LoadAverage.read())
 
         DispatchQueue.main.async { [weak self] in self?.receive(snapshot) }
     }
@@ -215,6 +245,17 @@ final class Sampler {
             gpuUsage = g
             gpuHistory.append(g)
         }
+        if let n = s.network {
+            network = n
+            netRxHistory.append(n.rxPerSecond)
+            netTxHistory.append(n.txPerSecond)
+        }
+        if let d = s.diskIO {
+            diskIO = d
+            diskReadHistory.append(d.readPerSecond)
+            diskWriteHistory.append(d.writePerSecond)
+        }
+        if let v = s.volumes, v != volumes { volumes = v }
         if let p = s.processes { processes = p }
 
         loadAverage = s.load

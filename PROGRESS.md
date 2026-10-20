@@ -45,6 +45,15 @@ What changed overnight, in one line each:
   other row nearly invisible. Rows now opt out of vibrancy; restricted rows use 50% label color,
   secondary columns of your processes 65% (were ~25% / ~55%).
 
+- **Network + disk panels** (btop-style): left side is now a 2×2 block — mem | disks over
+  sensors | net. net: ↓/↑ rate + total since boot for `en*` interfaces, mirrored graph (download
+  up, upload down) auto-scaled to a 1/2/5×10ⁿ ceiling. disks: usage bar per local visible volume
+  (Macintosh HD, external SSD…), read/write rates, mirrored graph. Verified: totals = `netstat -ib`
+  exactly; volume usage = `diskutil` container numbers. Cost ~0.4 ms/tick; app ~3.6% CPU, 60 MB.
+  Minimum window width is now 1040 (was 860); nothing clips at 1040×708.
+- **Selected row text no longer disappears**: AppKit draws the selection highlight above the
+  row's own layer, so row text moved into a subview (the stripe is now a layer color, no bitmap).
+
 ## Decisions to review
 - **CPU budget "< 1% of one core at 0.5 s" isn't reachable with this design.** Sampling alone is
   ~1.1–1.3%; redrawing ~100 changing labels + graphs at 2 Hz costs ~3–3.5% more while visible.
