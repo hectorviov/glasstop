@@ -71,6 +71,8 @@ stalls). Sleep/wake cycles are for you (the stall detector measures uptime, so s
 | 2026-10-20 00:45 | 59.0 MB | 5.40% | — | 0 |
 | 2026-10-20 01:16 | 61.0 MB | 5.69% | 414 | 0 |
 | 2026-10-20 01:46 | 64.0 MB | 5.59% | — | 0 |
+| 2026-10-20 02:17 | 59.0 MB | 5.73% | — | 0 |
+| 2026-10-20 02:47 | 60.0 MB | 5.71% | 414 | 0 |
 
 ## Milestones
 - **M0 — Build and run: DONE.** Floats over fullscreen apps (accessory policy), ⌘T toggles,
