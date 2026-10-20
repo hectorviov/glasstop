@@ -38,9 +38,15 @@ The project is a git repo now (local only, never pushed): `git log --oneline` sh
     the TPD/TRD/TUD families.
   - GPU utilization: IOAccelerator `PerformanceStatistics["Device Utilization %"]` (`GPUReader.swift`).
 
+- **M1 — Check the numbers: DONE.** Results + method in README.md "Accuracy check". Total CPU
+  within ~1.5 points of `top`; process CPU matches the kernel's CPU-time delta (99.9% for a busy
+  `yes`) and `top`'s steady-state samples (`top -l`'s first interval reads low); memory used/wired/
+  compressed match; Memory column = kernel `phys_footprint` like `top`/Activity Monitor. Activity
+  Monitor itself wasn't driven (needs an approval prompt while you were asleep) — the CLI
+  references read the same kernel counters.
+
 ### Next up
-1. M1 number checks (Activity Monitor / top), README notes.
-2. M2–M8 per PLAN.md.
+1. M2–M8 per PLAN.md.
 
 ## Decisions to review
 - **CPU budget "< 1% of one core at 0.5 s" isn't reachable with this design.** Sampling alone is
