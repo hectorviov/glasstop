@@ -46,7 +46,7 @@ struct ProcessTable: NSViewRepresentable {
         table.rowHeight = 17
         table.usesAutomaticRowHeights = false
         table.intercellSpacing = NSSize(width: 8, height: 2)
-        table.usesAlternatingRowBackgroundColors = true
+        table.usesAlternatingRowBackgroundColors = false   // translucent stripes drawn by the rows
         table.backgroundColor = .clear
         table.gridStyleMask = []
         table.allowsMultipleSelection = false
@@ -71,10 +71,12 @@ struct ProcessTable: NSViewRepresentable {
         let scroll = NSScrollView()
         scroll.documentView = table
         scroll.hasVerticalScroller = true
-        scroll.hasHorizontalScroller = false
+        scroll.hasHorizontalScroller = true      // fallback if the user widens columns past the view
         scroll.autohidesScrollers = true
         scroll.drawsBackground = false
         scroll.borderType = .noBorder
+        scroll.contentView.postsFrameChangedNotifications = true
+        context.coordinator.observeResizes(of: scroll.contentView)
         return scroll
     }
 
@@ -140,6 +142,37 @@ struct ProcessTable: NSViewRepresentable {
     final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
         weak var tableView: NSTableView?
         private var rows: [ProcessRow] = []
+        private var resizeObserver: NSObjectProtocol?
+
+        deinit {
+            if let resizeObserver { NotificationCenter.default.removeObserver(resizeObserver) }
+        }
+
+        /// Programmatic tables don't reliably shrink their columns with the scroll view, so the
+        /// flexible columns (Name, Command) are fitted to the visible width on every resize,
+        /// keeping their current proportions.
+        func observeResizes(of clip: NSClipView) {
+            resizeObserver = NotificationCenter.default.addObserver(
+                forName: NSView.frameDidChangeNotification, object: clip, queue: .main
+            ) { [weak self, weak clip] _ in
+                guard let clip else { return }
+                MainActor.assumeIsolated { self?.fitColumns(to: clip.bounds.width) }
+            }
+        }
+
+        private func fitColumns(to available: CGFloat) {
+            guard let tableView, available > 0 else { return }
+            let columns = tableView.tableColumns
+            let spacing = tableView.intercellSpacing.width * CGFloat(columns.count)
+            let flexible = columns.filter { Column(rawValue: $0.identifier.rawValue)?.flexible == true }
+            let fixed = columns.filter { !flexible.contains($0) }.reduce(0) { $0 + $1.width }
+            let room = available - fixed - spacing
+            let current = flexible.reduce(0) { $0 + $1.width }
+            guard !flexible.isEmpty, current > 0, abs(room - current) > 0.5 else { return }
+            for column in flexible {
+                column.width = max(column.minWidth, (room * column.width / current).rounded(.down))
+            }
+        }
         private var selectedPID: pid_t?
         private var isUpdating = false
         private static let rowIdentifier = NSUserInterfaceItemIdentifier("processRow")
@@ -215,6 +248,7 @@ struct ProcessTable: NSViewRepresentable {
             let view = (tableView.makeView(withIdentifier: Self.rowIdentifier, owner: nil) as? ProcessRowView)
                 ?? ProcessRowView(identifier: Self.rowIdentifier)
             view.table = tableView
+            view.striped = row % 2 == 1
             view.process = row < rows.count ? rows[row] : nil
             return view
         }
@@ -245,6 +279,9 @@ final class ProcessRowView: NSTableRowView {
     var process: ProcessRow? {
         didSet { if process != oldValue { needsDisplay = true } }
     }
+    var striped = false {
+        didSet { if striped != oldValue { needsDisplay = true } }
+    }
 
     private static let font = NSFont.monospacedDigitSystemFont(ofSize: 11.5, weight: .regular)
 
@@ -257,6 +294,14 @@ final class ProcessRowView: NSTableRowView {
 
     override var isSelected: Bool {
         didSet { if isSelected != oldValue { needsDisplay = true } }
+    }
+
+    /// Translucent stripes (instead of NSTableView's opaque alternating colors) so the
+    /// window's material shows through.
+    override func drawBackground(in dirtyRect: NSRect) {
+        guard striped else { return }
+        NSColor.labelColor.withAlphaComponent(0.045).setFill()
+        dirtyRect.fill()
     }
 
     override func draw(_ dirtyRect: NSRect) {

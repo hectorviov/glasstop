@@ -20,7 +20,7 @@ struct MemoryPanel: View {
                     MemoryRow(label: "Swap", bytes: m.swapUsed, total: m.swapTotal, gradient: tint(.orange),
                               detail: m.swapTotal > 0 ? "of \(formatBytes(m.swapTotal))" : nil)
                     HistoryGraph(values: sampler.memoryHistory.values, capacity: Sampler.historyCapacity,
-                                 gradient: tint(.purple))
+                                 gradient: tint(.purple), format: { String(format: "%.1f%% used", $0) })
                         .frame(height: 34)
                         .padding(.top, 2)
                 }
@@ -82,7 +82,8 @@ struct SensorsPanel: View {
                         }
                     }
                     HistoryGraph(values: sampler.cpuTempHistory.values, capacity: Sampler.historyCapacity / 2,
-                                 range: Palette.heatRange, gradient: Palette.heatGradient)
+                                 range: Palette.heatRange, gradient: Palette.heatGradient,
+                                 interval: TemperatureReader.interval, format: { String(format: "CPU %.1f°C", $0) })
                         .frame(height: 34)
                         .padding(.top, 2)
                         .help("CPU average temperature, last 2 minutes")

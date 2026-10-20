@@ -50,9 +50,23 @@ enum Palette {
 
 func loadColor(_ percent: Double) -> Color { Palette.load(percent) }
 
+extension Palette {
+    /// Accent per core group, fastest first (Super / Performance / Efficiency...).
+    static func groupTint(_ index: Int) -> Color {
+        let tints: [Color] = [
+            Color(red: 0.98, green: 0.58, blue: 0.40),   // coral
+            Color(red: 0.42, green: 0.74, blue: 0.98),   // sky
+            Color(red: 0.55, green: 0.85, blue: 0.65),   // mint
+        ]
+        return tints[index % tints.count]
+    }
+}
+
 // MARK: Panel
 
-/// btop-style box: a rounded border with the title (and optional trailing text) set into it.
+/// btop-style box: a rounded border with the title (and optional trailing text) set into gaps
+/// in its top edge. The gaps are real (cut out of the stroke path), so the box works on a
+/// translucent material background.
 struct Panel<Content: View, Accessory: View>: View {
     let title: String
     var tint: Color = .secondary
@@ -60,16 +74,18 @@ struct Panel<Content: View, Accessory: View>: View {
     @ViewBuilder var accessory: () -> Accessory
     @ViewBuilder var content: () -> Content
 
-    private let background = Color(nsColor: .windowBackgroundColor)
+    @State private var titleWidth: CGFloat = 0
+    @State private var trailingWidth: CGFloat = 0
+    private static var inset: CGFloat { 10 }
 
     var body: some View {
         content()
             .padding(EdgeInsets(top: 14, leading: 10, bottom: 10, trailing: 10))
             .frame(maxWidth: .infinity, alignment: .topLeading)
             .background(
-                RoundedRectangle(cornerRadius: 9)
-                    .strokeBorder(tint.opacity(0.35), lineWidth: 1)
-                    .background(RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(0.025)))
+                NotchedBorder(cornerRadius: 9, inset: Self.inset, leadingGap: titleWidth, trailingGap: trailingWidth)
+                    .stroke(tint.opacity(0.4), lineWidth: 1)
+                    .background(RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(0.03)))
             )
             .overlay(alignment: .top) {
                 HStack(spacing: 6) {
@@ -77,7 +93,7 @@ struct Panel<Content: View, Accessory: View>: View {
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(tint)
                         .padding(.horizontal, 5)
-                        .background(background)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { titleWidth = $0 }
                     Spacer(minLength: 8)
                     HStack(spacing: 6) {
                         accessory()
@@ -88,12 +104,55 @@ struct Panel<Content: View, Accessory: View>: View {
                         }
                     }
                     .padding(.horizontal, 5)
-                    .background(background)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { trailingWidth = $0 }
                 }
-                .padding(.horizontal, 10)
+                .padding(.horizontal, Self.inset)
                 .offset(y: -8)
             }
             .padding(.top, 8)
+    }
+}
+
+/// Rounded-rect outline with two gaps in the top edge, each `inset` from its side: one of
+/// `leadingGap` points on the left and one of `trailingGap` points on the right (0 = none).
+private struct NotchedBorder: Shape {
+    let cornerRadius: CGFloat
+    let inset: CGFloat
+    let leadingGap: CGFloat
+    let trailingGap: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        let r = rect.insetBy(dx: 0.5, dy: 0.5)
+        let radius = min(cornerRadius, r.width / 2, r.height / 2)
+        var gaps: [Range<CGFloat>] = []
+        if leadingGap > 0 { gaps.append((r.minX + inset)..<(r.minX + inset + leadingGap)) }
+        if trailingGap > 0 { gaps.append(max(r.maxX - inset - trailingGap, r.minX)..<(r.maxX - inset)) }
+
+        var p = Path()
+        // Top edge, left to right, skipping the gaps.
+        var x = r.minX + radius
+        for gap in gaps.sorted(by: { $0.lowerBound < $1.lowerBound }) where gap.upperBound > x {
+            if gap.lowerBound > x {
+                p.move(to: CGPoint(x: x, y: r.minY))
+                p.addLine(to: CGPoint(x: min(gap.lowerBound, r.maxX - radius), y: r.minY))
+            }
+            x = max(x, gap.upperBound)
+        }
+        p.move(to: CGPoint(x: min(x, r.maxX - radius), y: r.minY))
+        p.addLine(to: CGPoint(x: r.maxX - radius, y: r.minY))
+        // Around the rest of the box, back to the top-left corner.
+        p.addArc(center: CGPoint(x: r.maxX - radius, y: r.minY + radius), radius: radius,
+                 startAngle: .degrees(-90), endAngle: .degrees(0), clockwise: false)
+        p.addLine(to: CGPoint(x: r.maxX, y: r.maxY - radius))
+        p.addArc(center: CGPoint(x: r.maxX - radius, y: r.maxY - radius), radius: radius,
+                 startAngle: .degrees(0), endAngle: .degrees(90), clockwise: false)
+        p.addLine(to: CGPoint(x: r.minX + radius, y: r.maxY))
+        p.addArc(center: CGPoint(x: r.minX + radius, y: r.maxY - radius), radius: radius,
+                 startAngle: .degrees(90), endAngle: .degrees(180), clockwise: false)
+        p.addLine(to: CGPoint(x: r.minX, y: r.minY + radius))
+        p.addArc(center: CGPoint(x: r.minX + radius, y: r.minY + radius), radius: radius,
+                 startAngle: .degrees(180), endAngle: .degrees(270), clockwise: false)
+        return p
     }
 }
 

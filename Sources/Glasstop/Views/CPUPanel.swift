@@ -17,7 +17,8 @@ struct CPUPanel: View {
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .background(alignment: .leading) {
                     VStack(alignment: .leading, spacing: 4) {
-                        HistoryGraph(values: sampler.cpuHistory.values, capacity: Sampler.historyCapacity)
+                        HistoryGraph(values: sampler.cpuHistory.values, capacity: Sampler.historyCapacity,
+                                     format: { String(format: "%.1f%%", $0) })
                         HStack {
                             Text(String(format: "total %.1f%%", sampler.cpuTotal))
                             Spacer()
@@ -57,8 +58,8 @@ private struct CoreList: View {
                 Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 2) {
                     ForEach(Array(stride(from: 0, to: group.cpus.count, by: 2)), id: \.self) { i in
                         GridRow {
-                            coreRow(group.cpus[i])
-                            if i + 1 < group.cpus.count { coreRow(group.cpus[i + 1]) }
+                            coreRow(group.cpus[i], group: group)
+                            if i + 1 < group.cpus.count { coreRow(group.cpus[i + 1], group: group) }
                         }
                     }
                 }
@@ -73,11 +74,12 @@ private struct CoreList: View {
         .font(.system(size: 11))
     }
 
-    private func coreRow(_ cpu: Int) -> CoreRow {
+    private func coreRow(_ cpu: Int, group: CoreGroup) -> CoreRow {
         CoreRow(index: cpu,
                 value: cpu < sampler.perCore.count ? sampler.perCore[cpu] : 0,
                 history: cpu < sampler.perCoreHistory.count
-                    ? Array(sampler.perCoreHistory[cpu].values.suffix(CoreRow.points)) : [])
+                    ? Array(sampler.perCoreHistory[cpu].values.suffix(CoreRow.points)) : [],
+                tint: Palette.groupTint(group.id))
     }
 
     private func average(_ cpus: [Int]) -> Double {
@@ -113,9 +115,9 @@ private struct GroupHeader: View {
     var body: some View {
         HStack(spacing: 8) {
             Text("\(group.name) ×\(group.cpus.count)")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Palette.groupTint(group.id))
                 .fixedSize()
-            Rectangle().fill(Color.primary.opacity(0.12)).frame(height: 1)
+            Rectangle().fill(Palette.groupTint(group.id).opacity(0.25)).frame(height: 1)
             Numeric(text: String(format: "%.0f%%", percent), width: 36, color: loadColor(percent))
             Numeric(text: formatTemp(temp), width: 40, color: temp.map(Palette.heat) ?? .secondary)
         }
@@ -130,11 +132,12 @@ private struct CoreRow: View {
     let index: Int
     let value: Double
     let history: [Double]
+    let tint: Color
 
     var body: some View {
         HStack(spacing: 6) {
             Text("C\(index)")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(tint.opacity(0.85))
                 .frame(width: 26, alignment: .leading)
             HistoryGraph(values: history, capacity: Self.points, showsGrid: false, lineWidth: 1)
                 .frame(height: 13)

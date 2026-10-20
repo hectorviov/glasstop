@@ -16,10 +16,14 @@ struct HistoryGraph: NSViewRepresentable {
     var gradient: Gradient = Palette.loadGradient
     var showsGrid = true
     var lineWidth: CGFloat = 1.3
+    /// Seconds between samples; with `format`, enables a hover marker showing the exact value.
+    var interval: TimeInterval = Sampler.interval
+    var format: ((Double) -> String)? = nil
 
     func makeNSView(context: Context) -> GraphLayerView { GraphLayerView() }
 
     func updateNSView(_ view: GraphLayerView, context: Context) {
+        view.hover = format.map { format in (interval, format) }
         view.configure(values: values, capacity: capacity, range: range, gradient: gradient,
                        showsGrid: showsGrid, lineWidth: lineWidth)
     }
@@ -139,6 +143,15 @@ final class GraphLayerView: LayerHostView {
     private let fill = GradientShape(stroke: false)
     private let line = GradientShape(stroke: true)
 
+    /// (sample interval, value formatter). nil = no hover marker.
+    var hover: (TimeInterval, (Double) -> String)? {
+        didSet { if (hover == nil) != (oldValue == nil) { updateTrackingAreas() } }
+    }
+    private var hoverX: CGFloat?
+    private let marker = CAShapeLayer()
+    private let label = CATextLayer()
+    private static let labelFont = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .medium)
+
     override init(frame: NSRect) {
         super.init(frame: frame)
         grid.fillColor = nil
@@ -152,9 +165,75 @@ final class GraphLayerView: LayerHostView {
         layer?.addSublayer(grid)
         layer?.addSublayer(fill.gradient)
         layer?.addSublayer(line.gradient)
+        marker.lineWidth = 1
+        marker.isHidden = true
+        label.font = Self.labelFont
+        label.fontSize = Self.labelFont.pointSize
+        label.cornerRadius = 4
+        label.alignmentMode = .center
+        label.isHidden = true
+        layer?.addSublayer(marker)
+        layer?.addSublayer(label)
         fill.setColors(gradient)
         line.setColors(gradient)
         updateColors()
+    }
+
+    // MARK: Hover
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        guard hover != nil else { return }
+        // .activeAlways: the panel floats over other apps, so Glasstop is usually inactive.
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited,
+                                                              .activeAlways, .inVisibleRect],
+                                       owner: self))
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        hoverX = convert(event.locationInWindow, from: nil).x
+        withoutAnimation { updateHover() }
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        hoverX = nil
+        withoutAnimation { updateHover() }
+    }
+
+    private func updateHover() {
+        guard let (interval, format) = hover, let x = hoverX, values.count > 1, capacity > 1,
+              bounds.width > 0 else {
+            marker.isHidden = true
+            label.isHidden = true
+            return
+        }
+        let step = bounds.width / CGFloat(capacity - 1)
+        let offset = capacity - values.count
+        let i = min(max(Int((x / step).rounded()) - offset, 0), values.count - 1)
+        let px = CGFloat(i + offset) * step
+        let span = max(range.upperBound - range.lowerBound, .ulpOfOne)
+        let v = (min(max(values[i], range.lowerBound), range.upperBound) - range.lowerBound) / span
+        let py = lineWidth / 2 + (bounds.height - lineWidth) * CGFloat(v)
+
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: px, y: 0))
+        path.addLine(to: CGPoint(x: px, y: bounds.height))
+        path.addEllipse(in: CGRect(x: px - 2.5, y: py - 2.5, width: 5, height: 5))
+        marker.frame = bounds
+        marker.path = path
+        marker.isHidden = false
+
+        let ago = Double(values.count - 1 - i) * interval
+        let text = ago < 0.5 ? format(values[i]) : "\(format(values[i])) · \(Int(ago.rounded())) s ago"
+        let size = (text as NSString).size(withAttributes: [.font: Self.labelFont])
+        let w = ceil(size.width) + 10, h = ceil(size.height) + 4
+        let lx = min(max(px - w / 2, 0), max(bounds.width - w, 0))
+        let ly = py + 6 + h <= bounds.height ? py + 6 : max(py - 6 - h, 0)
+        label.string = text
+        label.frame = CGRect(x: lx, y: ly, width: w, height: h)
+        label.contentsScale = window?.backingScaleFactor ?? 2
+        label.isHidden = false
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
@@ -181,6 +260,10 @@ final class GraphLayerView: LayerHostView {
 
     override func updateColors() {
         grid.strokeColor = resolved(NSColor.labelColor.withAlphaComponent(0.07))
+        marker.strokeColor = resolved(NSColor.labelColor.withAlphaComponent(0.45))
+        marker.fillColor = resolved(NSColor.labelColor)
+        label.foregroundColor = resolved(NSColor.labelColor)
+        label.backgroundColor = resolved(NSColor.windowBackgroundColor.withAlphaComponent(0.92))
     }
 
     override func relayout() {
@@ -225,6 +308,7 @@ final class GraphLayerView: LayerHostView {
         line.shape.lineWidth = lineWidth
         line.shape.path = path
         fill.shape.path = area
+        if hoverX != nil { updateHover() }
     }
 }
 

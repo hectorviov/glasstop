@@ -17,15 +17,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .environment(appState)
         let hosting = NSHostingView(rootView: root)
         hosting.sizingOptions = [.minSize]
+        hosting.translatesAutoresizingMaskIntoConstraints = false
+
+        // Frosted material behind everything; stays vibrant while the app is inactive (the
+        // usual state for a floating monitor).
+        let material = NSVisualEffectView()
+        material.material = .underWindowBackground
+        material.blendingMode = .behindWindow
+        material.state = .active
+        material.addSubview(hosting)
+        NSLayoutConstraint.activate([
+            hosting.leadingAnchor.constraint(equalTo: material.leadingAnchor),
+            hosting.trailingAnchor.constraint(equalTo: material.trailingAnchor),
+            hosting.topAnchor.constraint(equalTo: material.topAnchor),
+            hosting.bottomAnchor.constraint(equalTo: material.bottomAnchor),
+        ])
 
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 1060, height: 820),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         panel.title = "Glasstop"
-        panel.contentView = hosting
+        panel.titleVisibility = .hidden                 // the header row lives in the titlebar
+        panel.titlebarAppearsTransparent = true
+        panel.contentView = material
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false                 // panels hide on deactivate by default
         if !panel.setFrameUsingName(Self.frameName) { panel.center() }

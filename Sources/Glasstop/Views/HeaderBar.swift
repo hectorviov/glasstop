@@ -1,6 +1,10 @@
 import SwiftUI
 
+/// Sits in the (transparent) titlebar row, right of the traffic lights.
 struct HeaderBar: View {
+    static let height: CGFloat = 28
+    static let trafficLightsWidth: CGFloat = 72
+
     @Environment(Sampler.self) private var sampler
     @Environment(AppState.self) private var appState
 
@@ -17,6 +21,27 @@ struct HeaderBar: View {
             }
             .buttonStyle(.borderless)
             .help("Keep on top (⌘T)")
+        }
+        .padding(.leading, Self.trafficLightsWidth)
+        .frame(height: Self.height)
+        .background(WindowDragArea())
+    }
+}
+
+/// Empty space that drags the window (the titlebar is covered by SwiftUI content).
+private struct WindowDragArea: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { DragView() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    private final class DragView: NSView {
+        override var mouseDownCanMoveWindow: Bool { true }
+
+        override func mouseDown(with event: NSEvent) {
+            if event.clickCount == 2 {
+                window?.performZoom(nil)
+            } else {
+                window?.performDrag(with: event)
+            }
         }
     }
 }
