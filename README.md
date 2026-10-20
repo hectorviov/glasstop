@@ -5,11 +5,24 @@ replacement that never freezes. Swift + AppKit/SwiftUI, no dependencies, every m
 direct syscall or IOKit call. See [PLAN.md](PLAN.md) for the spec and [PROGRESS.md](PROGRESS.md)
 for status.
 
+## Install
+
+Download the latest `Glasstop-x.y.z.dmg` from
+[Releases](https://github.com/hectorviov/glasstop/releases/latest), open it and drag Glasstop
+to the Applications shortcut. Needs an Apple silicon Mac with macOS 14 Sonoma or later.
+
+Release builds are ad-hoc signed, not notarized, so macOS blocks the first launch: open the app
+once, then click **Open Anyway** in System Settings → Privacy & Security (or run
+`xattr -dr com.apple.quarantine /Applications/Glasstop.app`).
+
+## Build from source
+
 ```bash
 swift build                     # debug build
 swift run                       # run from terminal
 ./scripts/bundle.sh             # release .app in build/
 ./scripts/bundle.sh --install   # …and copy it to /Applications
+./scripts/make-dmg.sh           # drag-to-install disk image in build/ (needs: pip install dmgbuild)
 open build/Glasstop.app
 ```
 
@@ -35,6 +48,23 @@ average CPU, with processes busy right now pulled to the top), so rows don't res
 refresh; the filter button has only-my-processes, hide-idle and tree view.
 Filter text, sort order and column layout persist. The net panel's title is a dropdown: all Wi-Fi/Ethernet adapters
 (default) or one interface (adapters by name, plus VPN tunnels and VM bridges).
+
+## Contributing and releases
+
+`main` is protected: changes land through pull requests, and the **CI** workflow (release build
+with warnings as errors, plus the app bundle) has to pass first.
+
+To publish a release, tag a commit on `main` and push the tag:
+
+```bash
+git tag v0.9.1 && git push origin v0.9.1
+```
+
+The **Release** workflow builds `Glasstop.app` stamped with that version, packs it into a
+drag-to-Applications disk image (`scripts/make-dmg.sh`, layout in `scripts/dmg-settings.py`)
+with a SHA-256 checksum and publishes a GitHub release with notes generated from the merged pull requests.
+A tag with a suffix (`v1.0.0-beta.1`) becomes a pre-release. Running the workflow by hand
+(Actions → Release → Run workflow) makes a draft release instead, which only you can see.
 
 Other scripts: `swift scripts/make-icon.swift` regenerates `Resources/AppIcon.icns`;
 `scripts/soak.sh [hours] [interval_min]` runs the reliability soak (results in `soak/`).

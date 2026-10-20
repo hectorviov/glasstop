@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: swift --version && xcodebuild -version
+
+      - name: Build (warnings are errors)
+        run: swift build -c release -Xswiftc -warnings-as-errors
+
+      - name: Bundle
+        run: ./scripts/bundle.sh
+
+      - name: Disk image
+        run: |
+          python3 -m venv "$RUNNER_TEMP/dmgbuild"     # Homebrew Python refuses global pip installs
+          "$RUNNER_TEMP/dmgbuild/bin/pip" install --quiet "dmgbuild==1.6.7"
+          export PATH="$RUNNER_TEMP/dmgbuild/bin:$PATH"
+          ./scripts/make-dmg.sh
