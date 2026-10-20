@@ -5,6 +5,8 @@ replacement that never freezes. Swift + AppKit/SwiftUI, no dependencies, every m
 direct syscall or IOKit call. See [PLAN.md](PLAN.md) for the spec and [PROGRESS.md](PROGRESS.md)
 for status.
 
+![Glasstop: CPU and GPU history, per-core load, memory, sensors, disks, network and the process table](docs/screenshots/glasstop.jpg)
+
 ## Install
 
 Download the latest `Glasstop-x.y.z.dmg` from
@@ -14,6 +16,11 @@ to the Applications shortcut. Needs an Apple silicon Mac with macOS 14 Sonoma or
 Releases are signed with a Developer ID and notarized by Apple once the signing secrets are set
 up (see below). A release built without them is ad-hoc signed: macOS blocks its first launch,
 so open it once, then click **Open Anyway** in System Settings → Privacy & Security.
+<img src="docs/screenshots/install-dmg.jpg" alt="The Glasstop disk image: drag Glasstop to Applications" width="480">
+
+Release builds are ad-hoc signed, not notarized, so macOS blocks the first launch: open the app
+once, then click **Open Anyway** in System Settings → Privacy & Security (or run
+`xattr -dr com.apple.quarantine /Applications/Glasstop.app`).
 
 ## Build from source
 
@@ -42,12 +49,18 @@ fullscreen Spaces).
 
 Window menu: opacity (also a slider in Settings) and click-through (the window ignores the
 mouse; click the Dock icon to turn it off). Process table: right-click for Copy PID / Copy Path / Reveal in Finder /
-Terminate / Force Kill; click GPU% to sort by GPU use; the **lazy** checkbox
+Terminate / Force Kill; click GPU% to sort by GPU use; the **Lazy** checkbox
 next to the filter makes the CPU% sort work like btop's "cpu lazy" (by each process's lifetime
 average CPU, with processes busy right now pulled to the top), so rows don't reshuffle every
 refresh; the filter button has only-my-processes, hide-idle and tree view.
-Filter text, sort order and column layout persist. The net panel's title is a dropdown: all Wi-Fi/Ethernet adapters
-(default) or one interface (adapters by name, plus VPN tunnels and VM bridges).
+Filter text, sort order and column layout persist. The net panel's title is a dropdown: all
+Wi-Fi/Ethernet adapters (default) or one interface (adapters by name, plus VPN tunnels and VM
+bridges).
+
+In a narrow window the side panels stack in two columns and the table drops Command, User, Thr
+and PID (in that order) to keep Name readable:
+
+<img src="docs/screenshots/glasstop-narrow.jpg" alt="Glasstop at its minimum window size" width="640">
 
 ## Contributing and releases
 
