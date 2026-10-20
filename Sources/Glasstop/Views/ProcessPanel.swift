@@ -3,7 +3,9 @@ import SwiftUI
 
 struct ProcessPanel: View {
     @Environment(Sampler.self) private var sampler
-    @State private var filter = ""
+    @Environment(AppState.self) private var appState
+    @AppStorage("processFilter") private var filter = ""
+    @FocusState private var filterFocused: Bool
 
     private var rows: [ProcessRow] {
         let f = filter.trimmingCharacters(in: .whitespaces)
@@ -19,10 +21,12 @@ struct ProcessPanel: View {
     var body: some View {
         let rows = self.rows
         Panel(title: "proc", tint: .blue, trailing: "\(rows.count)") {
-            TextField("filter", text: $filter)
+            TextField("filter (⌘F)", text: $filter)
                 .textFieldStyle(.roundedBorder)
                 .controlSize(.small)
                 .frame(width: 200)
+                .focused($filterFocused)
+                .onChange(of: appState.focusFilterRequest) { filterFocused = true }
         } content: {
             ProcessTable(rows: rows)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -63,7 +67,10 @@ struct ProcessTable: NSViewRepresentable {
             c.sortDescriptorPrototype = NSSortDescriptor(key: column.rawValue, ascending: column.ascendingByDefault)
             table.addTableColumn(c)
         }
-        table.sortDescriptors = [NSSortDescriptor(key: Column.cpu.rawValue, ascending: false)]
+        // Column order/widths persist via autosave; the sort order is saved by the coordinator.
+        table.autosaveName = "ProcessTable"
+        table.autosaveTableColumns = true
+        table.sortDescriptors = [Coordinator.savedSortDescriptor()]
         table.dataSource = context.coordinator
         table.delegate = context.coordinator
         context.coordinator.tableView = table
@@ -256,7 +263,22 @@ struct ProcessTable: NSViewRepresentable {
         /// The row view draws every column itself.
         func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? { nil }
 
+        private static let sortKeyDefault = "processSortKey"
+        private static let sortAscendingDefault = "processSortAscending"
+
+        static func savedSortDescriptor() -> NSSortDescriptor {
+            let d = UserDefaults.standard
+            guard let key = d.string(forKey: sortKeyDefault).flatMap(Column.init(rawValue:)) else {
+                return NSSortDescriptor(key: Column.cpu.rawValue, ascending: false)
+            }
+            return NSSortDescriptor(key: key.rawValue, ascending: d.bool(forKey: sortAscendingDefault))
+        }
+
         func tableView(_ tableView: NSTableView, sortDescriptorsDidChange oldDescriptors: [NSSortDescriptor]) {
+            if let d = tableView.sortDescriptors.first, let key = d.key {
+                UserDefaults.standard.set(key, forKey: Self.sortKeyDefault)
+                UserDefaults.standard.set(d.ascending, forKey: Self.sortAscendingDefault)
+            }
             rows = sorted(rows)
             refreshVisibleRows()
             restoreSelection()

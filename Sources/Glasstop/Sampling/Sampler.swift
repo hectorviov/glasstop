@@ -74,6 +74,8 @@ final class Sampler {
     @ObservationIgnored var isVisible = true {
         didSet { if isVisible && !oldValue { flushPending() } }
     }
+    /// Called on main for every tick, visible or not (drives the menu bar CPU %).
+    @ObservationIgnored var onTick: ((Snapshot) -> Void)?
     @ObservationIgnored private var pendingSnapshots: [Snapshot] = []
     @ObservationIgnored private var pendingTemperatures: [([TempGroupReading], Date)] = []
 
@@ -104,6 +106,7 @@ final class Sampler {
     // MARK: Main-thread apply
 
     private func receive(_ s: Snapshot) {
+        onTick?(s)
         // Only the newest process list matters; dropping older ones keeps the queue small.
         if !pendingSnapshots.isEmpty, s.processes != nil {
             pendingSnapshots[pendingSnapshots.count - 1].processes = nil
