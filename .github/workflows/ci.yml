@@ -27,3 +27,10 @@ jobs:
 
       - name: Bundle
         run: ./scripts/bundle.sh
+
+      - name: Disk image
+        run: |
+          python3 -m venv "$RUNNER_TEMP/dmgbuild"     # Homebrew Python refuses global pip installs
+          "$RUNNER_TEMP/dmgbuild/bin/pip" install --quiet "dmgbuild==1.6.7"
+          export PATH="$RUNNER_TEMP/dmgbuild/bin:$PATH"
+          ./scripts/make-dmg.sh

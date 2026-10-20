@@ -7,9 +7,9 @@ for status.
 
 ## Install
 
-Download the latest `Glasstop-x.y.z.zip` from
-[Releases](https://github.com/hectorviov/glasstop/releases/latest), unzip it and move
-`Glasstop.app` to Applications. Needs an Apple silicon Mac with macOS 14 Sonoma or later.
+Download the latest `Glasstop-x.y.z.dmg` from
+[Releases](https://github.com/hectorviov/glasstop/releases/latest), open it and drag Glasstop
+to the Applications shortcut. Needs an Apple silicon Mac with macOS 14 Sonoma or later.
 
 Release builds are ad-hoc signed, not notarized, so macOS blocks the first launch: open the app
 once, then click **Open Anyway** in System Settings → Privacy & Security (or run
@@ -22,6 +22,7 @@ swift build                     # debug build
 swift run                       # run from terminal
 ./scripts/bundle.sh             # release .app in build/
 ./scripts/bundle.sh --install   # …and copy it to /Applications
+./scripts/make-dmg.sh           # drag-to-install disk image in build/ (needs: pip install dmgbuild)
 open build/Glasstop.app
 ```
 
@@ -59,8 +60,9 @@ To publish a release, tag a commit on `main` and push the tag:
 git tag v0.9.1 && git push origin v0.9.1
 ```
 
-The **Release** workflow builds `Glasstop.app` stamped with that version, zips it with a SHA-256
-checksum and publishes a GitHub release with notes generated from the merged pull requests.
+The **Release** workflow builds `Glasstop.app` stamped with that version, packs it into a
+drag-to-Applications disk image (`scripts/make-dmg.sh`, layout in `scripts/dmg-settings.py`)
+with a SHA-256 checksum and publishes a GitHub release with notes generated from the merged pull requests.
 A tag with a suffix (`v1.0.0-beta.1`) becomes a pre-release. Running the workflow by hand
 (Actions → Release → Run workflow) makes a draft release instead, which only you can see.
 

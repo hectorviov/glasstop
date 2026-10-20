@@ -48,14 +48,17 @@ jobs:
           swift --version
           ./scripts/bundle.sh
 
-      - name: Package
+      - name: Disk image
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          zip="Glasstop-$VERSION.zip"
-          ditto -c -k --keepParent build/Glasstop.app "$zip"
-          shasum -a 256 "$zip" > "$zip.sha256"
-          cat "$zip.sha256"
+          python3 -m venv "$RUNNER_TEMP/dmgbuild"     # Homebrew Python refuses global pip installs
+          "$RUNNER_TEMP/dmgbuild/bin/pip" install --quiet "dmgbuild==1.6.7"
+          export PATH="$RUNNER_TEMP/dmgbuild/bin:$PATH"
+          dmg="Glasstop-$VERSION.dmg"
+          ./scripts/make-dmg.sh "$dmg"
+          shasum -a 256 "$dmg" > "$dmg.sha256"
+          cat "$dmg.sha256"
 
       - name: Publish
         env:
@@ -65,13 +68,13 @@ jobs:
           PRERELEASE: ${{ steps.version.outputs.prerelease }}
         run: |
           cat > notes.md <<'EOF'
-          **Install:** download `Glasstop-*.zip`, unzip, and move `Glasstop.app` to Applications.
+          **Install:** download `Glasstop-*.dmg`, open it and drag Glasstop to Applications.
           Requires an Apple silicon Mac with macOS 14 Sonoma or later.
 
           The app is ad-hoc signed, not notarized, so macOS blocks the first launch: open it once,
           then go to System Settings → Privacy & Security and click **Open Anyway**
           (or run `xattr -dr com.apple.quarantine /Applications/Glasstop.app`).
           EOF
-          gh release create "v$VERSION" "Glasstop-$VERSION.zip" "Glasstop-$VERSION.zip.sha256" \
+          gh release create "v$VERSION" "Glasstop-$VERSION.dmg" "Glasstop-$VERSION.dmg.sha256" \
             --title "Glasstop $VERSION" --target "$GITHUB_SHA" \
             --notes-file notes.md --generate-notes $DRAFT $PRERELEASE
