@@ -96,11 +96,12 @@ struct ProcessTable: NSViewRepresentable {
         table.dataSource = context.coordinator
         table.delegate = context.coordinator
         context.coordinator.tableView = table
+        context.coordinator.observeColumnWidths(of: table)
         let menu = NSMenu()
         menu.delegate = context.coordinator
         table.menu = menu
 
-        let scroll = NSScrollView()
+        let scroll = OverlayScrollView()
         scroll.documentView = table
         scroll.hasVerticalScroller = true
         scroll.hasHorizontalScroller = true      // fallback if the user widens columns past the view
@@ -183,6 +184,18 @@ struct ProcessTable: NSViewRepresentable {
         private var depths: [Int] = []          // tree depth per row (all 0 in flat mode)
         var tree = false
         private var resizeObserver: NSObjectProtocol?
+        private var widthObservers: [NSKeyValueObservation] = []
+
+        /// Rows draw their own columns, so they must redraw whenever a column's width changes.
+        /// `columnDidResize` only arrives at the start and end of a drag; KVO on `width` fires
+        /// for every step, so the text follows the divider live.
+        func observeColumnWidths(of table: NSTableView) {
+            widthObservers = table.tableColumns.map { column in
+                column.observe(\.width, options: [.new]) { [weak self] _, _ in
+                    self?.refreshVisibleRows(forceRedraw: true)   // width changes happen on main
+                }
+            }
+        }
 
         deinit {
             if let resizeObserver { NotificationCenter.default.removeObserver(resizeObserver) }
@@ -437,6 +450,16 @@ struct ProcessTable: NSViewRepresentable {
             alert.informativeText = message
             alert.runModal()
         }
+    }
+}
+
+/// Always uses overlay scrollers: with legacy ("always show") scrollers the table gets a
+/// separate gutter and a darker corner box above it, next to the header. Overlay scrollers
+/// float over the rows and the header spans the full width.
+final class OverlayScrollView: NSScrollView {
+    override var scrollerStyle: NSScroller.Style {
+        get { .overlay }
+        set { super.scrollerStyle = .overlay }
     }
 }
 
