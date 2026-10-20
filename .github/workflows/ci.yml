@@ -15,7 +15,9 @@ concurrency:
 jobs:
   build:
     name: build
-    runs-on: macos-latest
+    # Intel: GitHub's Apple silicon pool often queues for a long time. The release (built on
+    # Apple silicon) is what ships; CI compiles for both architectures to catch either breaking.
+    runs-on: macos-26-intel
     steps:
       - uses: actions/checkout@v7
 
@@ -24,6 +26,9 @@ jobs:
 
       - name: Build (warnings are errors)
         run: swift build -c release -Xswiftc -warnings-as-errors
+
+      - name: Build for Apple silicon (warnings are errors)
+        run: swift build -c release --arch arm64 -Xswiftc -warnings-as-errors
 
       - name: Bundle
         run: ./scripts/bundle.sh
