@@ -54,6 +54,7 @@ struct ProcessRow: Identifiable, Hashable {
     let user: String
     let threads: Int
     let cpu: Double            // % of one core (can exceed 100, like top)
+    var cpuTime: Double = 0    // total CPU seconds since the process started (for "lazy" sorting)
     let memory: UInt64         // phys footprint (falls back to resident size)
     var gpu: Double = 0        // % of the GPU (available for every user's processes)
     let accessible: Bool       // false = owned by another user; no cpu/mem data

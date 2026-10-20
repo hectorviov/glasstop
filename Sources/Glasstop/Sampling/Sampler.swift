@@ -71,6 +71,8 @@ final class Sampler {
     @ObservationIgnored private let processReader = ProcessReader()
     @ObservationIgnored private let gpuReader = GPUReader()
     @ObservationIgnored private let gpuProcessReader = GPUProcessReader()
+    /// Sum of the latest per-process GPU %, capped at 100 (sampler queue only).
+    @ObservationIgnored private var gpuProcessTotal = 0.0
     @ObservationIgnored private let networkReader = NetworkReader()
     @ObservationIgnored private let diskReader = DiskReader()
     @ObservationIgnored private var lastVolumesNs: UInt64 = 0
@@ -167,6 +169,7 @@ final class Sampler {
             self?.cpuReader.reset()
             self?.processReader.reset()
             self?.gpuProcessReader.reset()
+            self?.gpuProcessTotal = 0
             self?.networkReader.reset()
             self?.diskReader.reset()
         }
@@ -182,7 +185,7 @@ final class Sampler {
 
         let cpu = cpuReader.sample()
         let memory = memoryReader.sample()
-        let gpu = gpuReader.sample()        // ~0.2 ms: every tick, so it shares the CPU graph's time axis
+        var gpu = gpuReader.sample()        // ~0.2 ms: every tick, so it shares the CPU graph's time axis
         let network = networkReader.sample()  // ~0.1 ms
         let diskIO = diskReader.sampleIO()    // ~0.3 ms
         var volumes: [VolumeUsage]?
@@ -194,11 +197,15 @@ final class Sampler {
         var procs: [ProcessRow]?
         if tickCount % processEveryNTicks == 0 {
             let gpuByPID = gpuProcessReader.sample()   // ~1.4 ms
+            gpuProcessTotal = min(gpuByPID.values.reduce(0, +), 100)
             procs = processReader.sample()
             if !gpuByPID.isEmpty, procs != nil {
                 for i in procs!.indices { procs![i].gpu = gpuByPID[procs![i].pid] ?? 0 }
             }
         }
+        // "Device Utilization %" sometimes sits at 0 for minutes while processes keep the GPU
+        // busy (their GPU time sums to ~20%); then the per-process total is the better number.
+        if (gpu ?? 0) == 0, gpuProcessTotal > 0 { gpu = gpuProcessTotal }
 
         let duration = Double(DispatchTime.now().uptimeNanoseconds - startNs) / 1e9
         let snapshot = Snapshot(timestamp: Date(), duration: duration, cpu: cpu, memory: memory,

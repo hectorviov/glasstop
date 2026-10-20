@@ -8,6 +8,7 @@ struct ProcessPanel: View {
     @AppStorage("processOnlyMine") private var onlyMine = false
     @AppStorage("processHideIdle") private var hideIdle = false
     @AppStorage("processTree") private var tree = false
+    @AppStorage("processCPULazy") private var cpuLazy = false
 
     private static let myUID = getuid()
 
@@ -48,8 +49,13 @@ struct ProcessPanel: View {
                 .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(Color(nsColor: .controlBackgroundColor))
                     .padding(1))
+            Toggle("lazy", isOn: $cpuLazy)
+                .toggleStyle(.checkbox)
+                .font(.system(size: 11))
+                .fixedSize()
+                .help("CPU% sort like btop's \"cpu lazy\": by average CPU over each process's lifetime, so the order doesn't jump every refresh; processes using a lot of CPU right now are still pulled to the top")
         } content: {
-            ProcessTable(rows: rows, tree: tree)
+            ProcessTable(rows: rows, tree: tree, cpuLazy: cpuLazy)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
@@ -63,6 +69,7 @@ struct ProcessPanel: View {
 struct ProcessTable: NSViewRepresentable {
     let rows: [ProcessRow]
     var tree = false
+    var cpuLazy = false
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -115,6 +122,7 @@ struct ProcessTable: NSViewRepresentable {
 
     func updateNSView(_ nsView: NSScrollView, context: Context) {
         context.coordinator.tree = tree
+        context.coordinator.cpuLazy = cpuLazy
         context.coordinator.update(rows)
     }
 
@@ -191,6 +199,7 @@ struct ProcessTable: NSViewRepresentable {
         private var rows: [ProcessRow] = []
         private var depths: [Int] = []          // tree depth per row (all 0 in flat mode)
         var tree = false
+        var cpuLazy = false
         private var resizeObserver: NSObjectProtocol?
         private var widthObservers: [NSKeyValueObservation] = []
 
@@ -281,7 +290,11 @@ struct ProcessTable: NSViewRepresentable {
         /// sorted by the same descriptor.
         private func ordered(_ input: [ProcessRow]) -> ([ProcessRow], [Int]) {
             let less = comparator()
-            guard tree else { return (input.sorted(by: less), Array(repeating: 0, count: input.count)) }
+            guard tree else {
+                var sorted = input.sorted(by: less)
+                if isLazyCPUSort, tableView?.sortDescriptors.first?.ascending == false { bumpBusy(&sorted) }
+                return (sorted, Array(repeating: 0, count: sorted.count))
+            }
 
             let present = Set(input.map(\.pid))
             var children: [pid_t: [ProcessRow]] = [:]
@@ -311,10 +324,39 @@ struct ProcessTable: NSViewRepresentable {
             return (out, depths)
         }
 
+        private var isLazyCPUSort: Bool { cpuLazy && tableView?.sortDescriptors.first?.key == Column.cpu.rawValue }
+
+        /// btop's "cpu lazy" (btop_shared.cpp, proc_sorter): after sorting by lifetime CPU,
+        /// processes that are busy *now* move to the front. The threshold is 30%, or the busiest
+        /// of the first six rows if that's higher (10% if none of them passes 30%); rows already
+        /// at the front above 30% stay put; at most 11 rows move per refresh.
+        private func bumpBusy(_ rows: inout [ProcessRow]) {
+            var maxCPU = 10.0, target = 30.0, offset = 0, moved = 0
+            for i in rows.indices {
+                if i <= 5, rows[i].cpu > maxCPU {
+                    maxCPU = rows[i].cpu
+                } else if i == 6 {
+                    target = maxCPU > 30 ? maxCPU : 10
+                }
+                if i == offset, rows[i].cpu > 30 {
+                    offset += 1
+                } else if rows[i].cpu > target {
+                    let row = rows.remove(at: i)
+                    rows.insert(row, at: offset)
+                    moved += 1
+                    if moved > 10 { break }
+                }
+            }
+        }
+
         private func comparator() -> (ProcessRow, ProcessRow) -> Bool {
             guard let descriptor = tableView?.sortDescriptors.first,
                   let key = descriptor.key.flatMap(Column.init(rawValue:)) else { return { $0.pid < $1.pid } }
             let asc = descriptor.ascending
+            let lazy = isLazyCPUSort
+            let now = Date().timeIntervalSince1970
+            /// Average % of one core since the process started (btop's `cpu_c`).
+            func lifetimeCPU(_ r: ProcessRow) -> Double { r.cpuTime / max(now - Double(r.start), 1) * 100 }
             // Ties break on pid so equal rows never swap places between refreshes.
             return { [unowned self] a, b in
                 let order: ComparisonResult
@@ -325,7 +367,7 @@ struct ProcessTable: NSViewRepresentable {
                 case .threads: order = self.compare(a.threads, b.threads)
                 case .user: order = a.user.localizedCaseInsensitiveCompare(b.user)
                 case .memory: order = self.compare(a.memory, b.memory)
-                case .cpu: order = self.compare(a.cpu, b.cpu)
+                case .cpu: order = lazy ? self.compare(lifetimeCPU(a), lifetimeCPU(b)) : self.compare(a.cpu, b.cpu)
                 case .gpu: order = self.compare(a.gpu, b.gpu)
                 }
                 if order == .orderedSame { return a.pid < b.pid }

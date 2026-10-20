@@ -98,6 +98,7 @@ final class ProcessReader {
                     user: userName(bsd.pbi_uid),
                     threads: Int(task.pti_threadnum),
                     cpu: cpu,
+                    cpuTime: cpuNs / 1e9,
                     memory: memory ?? task.pti_resident_size,
                     accessible: true
                 ))

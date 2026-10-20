@@ -72,7 +72,12 @@ What changed overnight, in one line each:
   % GPU. Works for other users' processes too (WindowServer ~12–16%). ~1.4 ms per process
   refresh for ~120 clients. Finding: the overall `Device Utilization %` (top GPU meter) sometimes
   reads 0 for long stretches while processes clearly use the GPU (sum ~22%); at other times both
-  agree (~20%).
+  agree (~20%). Fix: when it reads 0, the GPU meter/graph use the per-process total (capped 100).
+- **"lazy" checkbox** next to the filter = btop's "cpu lazy" sort (btop_shared.cpp
+  `proc_sorter`): CPU% sorts by lifetime average (CPU time ÷ process age, btop's `cpu_c`), then
+  rows currently above a threshold (30%, or the top-6 max if higher; 10% if no top-6 row is over
+  30%) are moved to the front, at most 11 per refresh. Applies to descending CPU% sorts; in tree
+  view only the lifetime ordering applies (same as btop). The column still shows the live CPU%.
 
 ## Decisions to review
 - **CPU budget "< 1% of one core at 0.5 s" isn't reachable with this design.** Sampling alone is

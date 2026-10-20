@@ -29,7 +29,10 @@ fullscreen Spaces).
 
 Window menu: opacity (also a slider in Settings) and click-through (the window ignores the
 mouse; click the Dock icon to turn it off). Process table: right-click for Copy PID / Copy Path / Reveal in Finder /
-Terminate / Force Kill; click GPU% to sort by GPU use; the filter button has only-my-processes, hide-idle and tree view.
+Terminate / Force Kill; click GPU% to sort by GPU use; the **lazy** checkbox
+next to the filter makes the CPU% sort work like btop's "cpu lazy" (by each process's lifetime
+average CPU, with processes busy right now pulled to the top), so rows don't reshuffle every
+refresh; the filter button has only-my-processes, hide-idle and tree view.
 Filter text, sort order and column layout persist. The net panel's title is a dropdown: all Wi-Fi/Ethernet adapters
 (default) or one interface (adapters by name, plus VPN tunnels and VM bridges).
 
