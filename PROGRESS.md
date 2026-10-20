@@ -16,7 +16,7 @@ What changed overnight, in one line each:
   bug where ~335 system processes (root, daemons) were missing from the table.
 - **New:** menu bar item (CPU %), compact mode ⌘1/⌘2, opacity, click-through, ⌘F, context menu
   (copy/reveal/terminate/force kill), tree view, only-mine / hide-idle filters, Settings (⌘,),
-  optional global hotkey ⌃⌥⌘M, app icon, `bundle.sh --install`.
+  optional global hotkey ⌃⌥⌘G, app icon, `bundle.sh --install`.
 - **Look:** transparent titlebar, frosted background, per-cluster colors, hover values on graphs.
 
 ### Please try / verify (I couldn't headlessly)
@@ -25,7 +25,7 @@ What changed overnight, in one line each:
 2. **Hover** a history graph (CPU, memory, temperature): marker + "42.1% · 35 s ago" label.
 3. **Right-click** a process row: menu actions. (The kill path itself is tested: it re-checks
    pid + start time, so a reused pid is never signalled.)
-4. **Global hotkey**: enable in Settings, press ⌃⌥⌘M. It registered without conflicts here.
+4. **Global hotkey**: enable in Settings, press ⌃⌥⌘G. It registered without conflicts here.
 5. **Sleep/wake**: after wake, CPU/process numbers should not spike and temps should resume.
 6. **Your call**: `./scripts/bundle.sh --install`, Launch at login (Settings), Developer ID signing.
 7. Note: **Keep on Top is currently OFF** in your saved settings (it was off when I started
@@ -85,6 +85,9 @@ What changed overnight, in one line each:
   overflow onto the column headers. Verified at 1040×720 (PID, Name, Memory, CPU%, GPU%) and
   1200×720 (+ Thr, User).
 
+- **Stale badge false alarm fixed**: while the window was covered, the header could show
+  "stalled Ns" because publishing pauses then; it now checks when ticks actually arrive.
+
 ## Decisions to review
 - **CPU budget "< 1% of one core at 0.5 s" isn't reachable with this design.** Sampling alone is
   ~1.1–1.3%; redrawing ~100 changing labels + graphs at 2 Hz costs ~3–3.5% more while visible.
@@ -109,7 +112,7 @@ What changed overnight, in one line each:
   no reliable sensor→core mapping. HID `PMU tdie*` is the fallback (0.75 ms/sensor, 5× slower).
 - **App Nap opt-out** (`userInitiatedAllowingIdleSystemSleep`) so a covered window doesn't
   throttle sampling (graphs would skip samples). The system can still idle-sleep.
-- **Global hotkey** default off; combination ⌃⌥⌘M (Carbon `RegisterEventHotKey`, no permission).
+- **Global hotkey** default off; combination ⌃⌥⌘G (Carbon `RegisterEventHotKey`, no permission).
 - **Version 0.9.0** (not 1.0) until the soak and your review are done.
 - **Leaks**: `leaks` reports ~414 "leaks" (~20 KB), all three copies of one Apple App Intents XPC
   cycle (`LNDaemonApplicationInterface`, created at launch; linkd is unreachable). None are

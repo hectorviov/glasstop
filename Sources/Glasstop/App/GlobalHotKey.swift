@@ -4,11 +4,11 @@ import Foundation
 /// A system-wide hotkey via Carbon's RegisterEventHotKey. Unlike NSEvent global monitors this
 /// needs no Accessibility / Input Monitoring permission.
 final class GlobalHotKey {
-    /// ⌃⌥⌘M — "Glasstop". Shown in the status menu.
-    static let displayString = "⌃⌥⌘M"
-    private static let keyCode = UInt32(kVK_ANSI_M)
+    /// ⌃⌥⌘G — "Glasstop". Shown in Settings.
+    static let displayString = "⌃⌥⌘G"
+    private static let keyCode = UInt32(kVK_ANSI_G)
     private static let modifiers = UInt32(controlKey | optionKey | cmdKey)
-    private static let signature: OSType = 0x4D50_6C73   // 'MPls'
+    private static let signature: OSType = 0x476C_7374   // 'Glst'
 
     private var hotKeyRef: EventHotKeyRef?
     private var handlerRef: EventHandlerRef?

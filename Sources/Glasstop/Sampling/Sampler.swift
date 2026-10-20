@@ -138,6 +138,9 @@ final class Sampler {
 
     /// Set by the window owner. While false, nothing is published to SwiftUI (no view
     /// updates at all); snapshots queue up (bounded) and are applied when visible again.
+    /// When the last tick reached the main thread, published or not. Not observed: the stale
+    /// badge polls it, so it stays truthful while publishing is paused for a hidden window.
+    @ObservationIgnored private(set) var lastReceivedAt = Date.distantPast
     @ObservationIgnored var isVisible = true {
         didSet { if isVisible && !oldValue { flushPending() } }
     }
@@ -227,6 +230,7 @@ final class Sampler {
             }
         }
         lastReceiveUptimeNs = nowNs
+        lastReceivedAt = Date()
         // Only the newest process list matters; dropping older ones keeps the queue small.
         if !pendingSnapshots.isEmpty, s.processes != nil {
             pendingSnapshots[pendingSnapshots.count - 1].processes = nil

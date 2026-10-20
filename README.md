@@ -25,7 +25,7 @@ fullscreen Spaces).
 | ⌘F | Focus the process filter |
 | − / + (header) | Refresh interval in 100 ms steps (hold to repeat, ⌥-click for 1 s), 100 ms–5 s, default 1000 ms |
 | ⌘, | Settings (refresh interval, history length, process refresh, launch at login, hotkey) |
-| ⌃⌥⌘M | Show/hide from anywhere (optional global hotkey, off by default) |
+| ⌃⌥⌘G | Show/hide from anywhere (optional global hotkey, off by default) |
 
 Window menu: opacity (also a slider in Settings) and click-through (the window ignores the
 mouse; click the Dock icon to turn it off). Process table: right-click for Copy PID / Copy Path / Reveal in Finder /

@@ -89,7 +89,8 @@ struct StaleBadge: View {
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
-            let age = context.date.timeIntervalSince(sampler.lastSampleAt)
+            // Not `lastSampleAt`: that freezes while a covered window isn't being updated.
+            let age = context.date.timeIntervalSince(sampler.lastReceivedAt)
             let stale = age > max(2, sampler.interval * 3)
             HStack(spacing: 4) {
                 Circle().fill(stale ? Color.red : Color.green).frame(width: 7, height: 7)

@@ -155,7 +155,7 @@ struct ProcessTable: NSViewRepresentable {
             }
         }
         /// CPU% / GPU% keep room for the title plus the sort arrow.
-        var minWidth: CGFloat { self == .cpu || self == .gpu ? 56 : min(width, 34) }
+        var minWidth: CGFloat { self == .cpu || self == .gpu ? 60 : min(width, 34) }
         var flexible: Bool { self == .name || self == .command }
         var alignment: NSTextAlignment {
             switch self {

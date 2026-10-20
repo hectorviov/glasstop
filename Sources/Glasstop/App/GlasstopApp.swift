@@ -14,3 +14,4 @@ enum GlasstopMain {
         withExtendedLifetime(delegate) { app.run() }
     }
 }
+
