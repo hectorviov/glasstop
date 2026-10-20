@@ -74,7 +74,10 @@ What changed overnight, in one line each:
 upward trend, CPU 5.4–5.9%, leaks flat at 414 (Apple App Intents), **0 stalls**. Ended early at
 your request to relaunch on the build with the mirrored GPU graph and refresh arrows.
 **Run 2** (build 68dbb37) ran 07:10–07:14 (1 sample: 69 MB, 5.71%, 0 stalls), replaced by
-**Run 3** (100 ms steps, 1000 ms default) → `soak/soak-20261020-07*.csv`.
+**Run 3** (build with 100 ms steps, 1000 ms default, RGBA8 table rows) → `soak/soak-20261020-07*.csv`.
+Found while restarting: at your larger window (1211×895 on the 2× external display) the footprint
+was **87–93 MB** — the process table's ~45 row backing stores were 16-bit float (AppKit's
+default on wide-gamut/EDR displays). Rows now use 8-bit RGBA: **~60 MB**, Core Animation 40 → 15 MB.
 Run 2 detail: started 07:10 → `soak/soak-20261020-0710.csv`. First sample: 69 MB
 (bigger window now, plus GPU history), 5.71% CPU, leaks 417 (same three Apple cycles), 0 stalls.
 

@@ -456,6 +456,14 @@ final class ProcessRowView: NSTableRowView {
         self.identifier = identifier
     }
 
+    /// On wide-gamut/EDR displays AppKit gives layer-backed views a 16-bit float backing store;
+    /// for ~40 table-wide rows that was ~38 MB. Plain text needs only 8 bits per channel.
+    override func makeBackingLayer() -> CALayer {
+        let layer = super.makeBackingLayer()
+        layer.contentsFormat = .RGBA8Uint
+        return layer
+    }
+
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
     override var isSelected: Bool {
