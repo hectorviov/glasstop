@@ -114,7 +114,7 @@ struct NetworkPanel: View {
                               upGradient: fadeGradient(.teal), downGradient: fadeGradient(.indigo),
                               upLabel: "down", downLabel: "up",
                               upFormat: { "↓ " + formatRate($0) }, downFormat: { "↑ " + formatRate($0) })
-                    .frame(height: 104)
+                    .sidePanelGraph(minHeight: 50)
                     .overlay(alignment: .topLeading) { ScaleTag(text: formatRate(ceiling)) }
                     .padding(.top, 2)
             }
@@ -179,7 +179,7 @@ struct DiskPanel: View {
                               upGradient: fadeGradient(.pink), downGradient: fadeGradient(.orange),
                               upLabel: "read", downLabel: "write",
                               upFormat: { "R " + formatRate($0) }, downFormat: { "W " + formatRate($0) })
-                    .frame(height: 80)
+                    .sidePanelGraph(minHeight: 46)
                     .overlay(alignment: .topLeading) { ScaleTag(text: formatRate(ceiling)) }
                     .padding(.top, 2)
             }

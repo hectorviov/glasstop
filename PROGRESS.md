@@ -54,6 +54,12 @@ What changed overnight, in one line each:
 - **Selected row text no longer disappears**: AppKit draws the selection highlight above the
   row's own layer, so row text moved into a subview (the stripe is now a layer color, no bitmap).
 
+- **Responsive side panels**: mem, sensors, disks and net stack in **one column when they fit**
+  the height below the CPU box (the process table gets the width), otherwise two columns; either
+  way the panels stretch to fill the height (their graphs absorb the space). The decision reuses
+  layout geometry (panel heights minus graph stretch = needed height) instead of `ViewThatFits`,
+  which re-measured both arrangements every refresh (~2% CPU). Minimum window height 720.
+
 ## Decisions to review
 - **CPU budget "< 1% of one core at 0.5 s" isn't reachable with this design.** Sampling alone is
   ~1.1–1.3%; redrawing ~100 changing labels + graphs at 2 Hz costs ~3–3.5% more while visible.
