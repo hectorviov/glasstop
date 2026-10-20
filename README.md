@@ -112,8 +112,9 @@ Secrets and variables → Actions); without them it falls back to an ad-hoc buil
 
 ### Building releases on your own Mac
 
-GitHub's Apple silicon runners sometimes queue for a long time. The Release workflow can run on
-a self-hosted Mac instead (CI stays on GitHub's runners: on a public repo, pull requests must
+Releases build on GitHub's Intel runners (the Apple silicon pool is often too busy to get a
+machine) and cross-compile the arm64 app. The Release workflow can also run on a self-hosted
+Mac, which is usually faster (CI stays on GitHub's runners: on a public repo, pull requests must
 never run on your machine):
 
 1. Settings → Actions → Runners → **New self-hosted runner** → macOS, ARM64. Run the commands it

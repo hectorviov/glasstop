@@ -7,10 +7,12 @@ name: Release
 # disk image are signed with the Developer ID, notarized by Apple and stapled, so Gatekeeper
 # opens them without a warning. Without them the release is ad-hoc signed, as before.
 #
-# Runs on GitHub's macOS runners unless the repository variable RELEASE_RUNNER names other
-# runner labels as JSON, e.g. ["self-hosted", "macOS", "ARM64", "glasstop-release"] for a
-# self-hosted Mac. Only this workflow should use a self-hosted runner: it can only be started
-# by people with write access, unlike CI, which runs code from pull requests.
+# Runs on GitHub's Intel macOS runners (the Apple silicon pool is often too busy to get a
+# machine) and cross-compiles the arm64 app, so the host architecture doesn't matter. The
+# repository variable RELEASE_RUNNER can name other runner labels as JSON, e.g.
+# ["self-hosted", "macOS", "ARM64", "glasstop-release"] for a self-hosted Mac. Only this
+# workflow should use a self-hosted runner: it can only be started by people with write
+# access, unlike CI, which runs code from pull requests.
 on:
   push:
     tags: ['v*']
@@ -25,7 +27,7 @@ permissions:
 
 jobs:
   release:
-    runs-on: ${{ fromJSON(vars.RELEASE_RUNNER || '"macos-latest"') }}
+    runs-on: ${{ fromJSON(vars.RELEASE_RUNNER || '"macos-26-intel"') }}
     env:
       SIGNED: ${{ secrets.MACOS_CERTIFICATE_P12 != '' && secrets.NOTARY_API_KEY != '' }}
     steps:
@@ -97,9 +99,13 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.version }}
           BUILD_NUMBER: ${{ github.run_number }}
+          ARCH: arm64                      # Glasstop is Apple silicon only
         run: |
           swift --version
           ./scripts/bundle.sh
+          archs=$(lipo -archs build/Glasstop.app/Contents/MacOS/Glasstop)
+          echo "Architectures: $archs"
+          [[ "$archs" == "arm64" ]] || { echo "::error::expected an arm64 binary, got '$archs'"; exit 1; }
 
       - name: Notarize app
         if: env.SIGNED == 'true'
