@@ -7,3 +7,6 @@ DerivedData/
 
 # soak stderr logs (CSV results are committed)
 soak/*.log
+
+# Claude Code session state
+.claude/scheduled_tasks.lock
