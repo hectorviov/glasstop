@@ -6,14 +6,32 @@ direct syscall or IOKit call. See [PLAN.md](PLAN.md) for the spec and [PROGRESS.
 for status.
 
 ```bash
-swift build                 # debug build
-swift run                   # run from terminal
-./scripts/bundle.sh         # release .app in build/
+swift build                     # debug build
+swift run                       # run from terminal
+./scripts/bundle.sh             # release .app in build/
+./scripts/bundle.sh --install   # …and copy it to /Applications
 open build/Glasstop.app
 ```
 
-Keyboard: ⌘T keep on top · ⌘Q quit (closing the window quits too). Glasstop runs as an
-accessory app (no Dock icon) so it can float over other apps' fullscreen Spaces.
+Glasstop runs as an accessory app (no Dock icon) so it can float over other apps'
+fullscreen Spaces. Its handle is the **menu bar item** showing CPU %: click to show/hide the
+window, right-click for options. Closing the window hides it; quit from the menu (⌘Q).
+
+| Shortcut | Action |
+|---|---|
+| ⌘T | Keep on top (all Spaces, incl. fullscreen apps) |
+| ⌘1 / ⌘2 | Full / compact mode (each remembers its own size) |
+| ⌘F | Focus the process filter |
+| ⌘, | Settings (refresh interval, history length, process refresh, launch at login, hotkey) |
+| ⌃⌥⌘M | Show/hide from anywhere (optional global hotkey, off by default) |
+
+Status menu: opacity slider and click-through (the window ignores the mouse; turn it off from
+the menu bar item). Process table: right-click for Copy PID / Copy Path / Reveal in Finder /
+Terminate / Force Kill; the filter button has only-my-processes, hide-idle and tree view.
+Filter text, sort order and column layout persist.
+
+Other scripts: `swift scripts/make-icon.swift` regenerates `Resources/AppIcon.icns`;
+`scripts/soak.sh [hours] [interval_min]` runs the reliability soak (results in `soak/`).
 
 ## Accuracy check (M1)
 
