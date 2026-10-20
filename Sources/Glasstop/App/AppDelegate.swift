@@ -43,7 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             hosting.bottomAnchor.constraint(equalTo: material.bottomAnchor),
         ])
 
-        let panel = NSPanel(
+        let panel = GlasstopPanel(
             contentRect: NSRect(x: 0, y: 0, width: 1060, height: 820),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
@@ -255,5 +255,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         menuItem.target = self
         menuItems[key] = menuItem
         return menuItem
+    }
+}
+
+/// NSPanel closes itself on Esc (`cancelOperation`), which hid Glasstop. Here Esc only ends
+/// editing: the search field clears its text on the first Esc (standard), and an Esc on an
+/// empty field reaches the panel, which removes focus from it. The window never closes on Esc.
+final class GlasstopPanel: NSPanel {
+    override func cancelOperation(_ sender: Any?) {
+        if firstResponder is NSText {      // the field editor of the focused text/search field
+            makeFirstResponder(nil)
+        }
     }
 }
