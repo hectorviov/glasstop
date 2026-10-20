@@ -4,25 +4,31 @@ import SwiftUI
 struct CPUPanel: View {
     @Environment(Sampler.self) private var sampler
 
+    static let coreListWidth: CGFloat = 380
+    static let spacing: CGFloat = 14
+
     var body: some View {
         Panel(title: "cpu", tint: .green, trailing: uptimeText) {
-            HStack(alignment: .top, spacing: 14) {
-                VStack(alignment: .leading, spacing: 4) {
-                    HistoryGraph(values: sampler.cpuHistory.values, capacity: Sampler.historyCapacity)
-                    HStack {
-                        Text(String(format: "total %.1f%%", sampler.cpuTotal))
-                        Spacer()
-                        Text(String(format: "load %.2f  %.2f  %.2f",
-                                    sampler.loadAverage.one, sampler.loadAverage.five, sampler.loadAverage.fifteen))
+            // The core list sets the box height; the graph fills exactly that height as a
+            // background. (An "equal-height columns" .fixedSize layout gave the graph's layer
+            // an enormous backing store: ~90 MB of GPU memory.)
+            CoreList()
+                .frame(width: Self.coreListWidth)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .background(alignment: .leading) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HistoryGraph(values: sampler.cpuHistory.values, capacity: Sampler.historyCapacity)
+                        HStack {
+                            Text(String(format: "total %.1f%%", sampler.cpuTotal))
+                            Spacer()
+                            Text(String(format: "load %.2f  %.2f  %.2f",
+                                        sampler.loadAverage.one, sampler.loadAverage.five, sampler.loadAverage.fifteen))
+                        }
+                        .font(.system(size: 11).monospacedDigit())
+                        .foregroundStyle(.secondary)
                     }
-                    .font(.system(size: 11).monospacedDigit())
-                    .foregroundStyle(.secondary)
+                    .padding(.trailing, Self.coreListWidth + Self.spacing)
                 }
-                .frame(minWidth: 240, maxWidth: .infinity, maxHeight: .infinity)
-
-                CoreList()
-                    .frame(width: 380)
-            }
         }
     }
 
@@ -37,7 +43,6 @@ struct CPUPanel: View {
 
 private struct CoreList: View {
     @Environment(Sampler.self) private var sampler
-    private let columns = [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
@@ -48,12 +53,13 @@ private struct CoreList: View {
             ForEach(sampler.system.coreGroups) { group in
                 GroupHeader(group: group, percent: average(group.cpus), temp: sampler.temperature(for: group))
                     .padding(.top, 3)
-                LazyVGrid(columns: columns, alignment: .leading, spacing: 2) {
-                    ForEach(group.cpus, id: \.self) { cpu in
-                        CoreRow(index: cpu,
-                                value: cpu < sampler.perCore.count ? sampler.perCore[cpu] : 0,
-                                history: cpu < sampler.perCoreHistory.count
-                                    ? Array(sampler.perCoreHistory[cpu].values.suffix(CoreRow.points)) : [])
+                // Plain Grid: with 18 cells a lazy container buys nothing.
+                Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 2) {
+                    ForEach(Array(stride(from: 0, to: group.cpus.count, by: 2)), id: \.self) { i in
+                        GridRow {
+                            coreRow(group.cpus[i])
+                            if i + 1 < group.cpus.count { coreRow(group.cpus[i + 1]) }
+                        }
                     }
                 }
             }
@@ -65,6 +71,13 @@ private struct CoreList: View {
             }
         }
         .font(.system(size: 11))
+    }
+
+    private func coreRow(_ cpu: Int) -> CoreRow {
+        CoreRow(index: cpu,
+                value: cpu < sampler.perCore.count ? sampler.perCore[cpu] : 0,
+                history: cpu < sampler.perCoreHistory.count
+                    ? Array(sampler.perCoreHistory[cpu].values.suffix(CoreRow.points)) : [])
     }
 
     private func average(_ cpus: [Int]) -> Double {

@@ -124,21 +124,49 @@ struct ProcessTable: NSViewRepresentable {
         private var isReloading = false
         private let font = NSFont.monospacedDigitSystemFont(ofSize: 11.5, weight: .regular)
 
+        /// Called every refresh. Rows are positional, so instead of reloadData() (which tears
+        /// down and rebuilds every visible cell) only the row count is adjusted and the
+        /// visible cells are patched in place.
         func update(_ newRows: [ProcessRow]) {
+            guard let tableView else { return }
+            let oldCount = rows.count
             rows = sorted(newRows)
-            reload()
+            isReloading = true
+            if rows.count > oldCount {
+                tableView.insertRows(at: IndexSet(oldCount..<rows.count), withAnimation: [])
+            } else if rows.count < oldCount {
+                tableView.removeRows(at: IndexSet(rows.count..<oldCount), withAnimation: [])
+            }
+            let visible = tableView.rows(in: tableView.visibleRect)
+            for row in visible.location..<min(visible.location + visible.length, rows.count) {
+                for (index, tableColumn) in tableView.tableColumns.enumerated() {
+                    guard let column = Column(rawValue: tableColumn.identifier.rawValue),
+                          let field = tableView.view(atColumn: index, row: row, makeIfNecessary: false) as? NSTextField
+                    else { continue }
+                    configure(field, column: column, row: rows[row])
+                }
+            }
+            restoreSelection()
+            isReloading = false
         }
 
         private func reload() {
             guard let tableView else { return }
             isReloading = true
             tableView.reloadData()
+            restoreSelection()
+            isReloading = false
+        }
+
+        private func restoreSelection() {
+            guard let tableView else { return }
             if let pid = selectedPID, let i = rows.firstIndex(where: { $0.pid == pid }) {
-                tableView.selectRowIndexes(IndexSet(integer: i), byExtendingSelection: false)
-            } else {
+                if tableView.selectedRow != i {
+                    tableView.selectRowIndexes(IndexSet(integer: i), byExtendingSelection: false)
+                }
+            } else if tableView.selectedRow >= 0 {
                 tableView.deselectAll(nil)
             }
-            isReloading = false
         }
 
         private func sorted(_ input: [ProcessRow]) -> [ProcessRow] {
@@ -175,30 +203,38 @@ struct ProcessTable: NSViewRepresentable {
                   row < rows.count else { return nil }
             let field = (tableView.makeView(withIdentifier: column.identifier, owner: nil) as? NSTextField)
                 ?? makeField(column)
-            let r = rows[row]
-            field.textColor = .labelColor
+            configure(field, column: column, row: rows[row])
+            return field
+        }
+
+        /// Only touches the field when something changed: every set triggers a redraw.
+        private func configure(_ field: NSTextField, column: Column, row r: ProcessRow) {
+            let text: String
+            var color: NSColor = .labelColor
             switch column {
             case .pid:
-                field.stringValue = String(r.pid)
-                field.textColor = .secondaryLabelColor
+                text = String(r.pid)
+                color = .secondaryLabelColor
             case .name:
-                field.stringValue = r.name
+                text = r.name
             case .command:
-                field.stringValue = r.path
-                field.textColor = .secondaryLabelColor
+                text = r.path
+                color = .secondaryLabelColor
             case .threads:
-                field.stringValue = r.accessible ? String(r.threads) : "—"
+                text = r.accessible ? String(r.threads) : "—"
             case .user:
-                field.stringValue = r.user
-                field.textColor = .secondaryLabelColor
+                text = r.user
+                color = .secondaryLabelColor
             case .memory:
-                field.stringValue = r.accessible ? formatBytes(r.memory) : "—"
+                text = r.accessible ? formatBytes(r.memory) : "—"
             case .cpu:
-                field.stringValue = r.accessible ? String(format: "%.1f", r.cpu) : "—"
-                field.textColor = r.accessible && r.cpu >= 1 ? Palette.loadNS(min(r.cpu, 100)) : .secondaryLabelColor
+                text = r.accessible ? String(format: "%.1f", r.cpu) : "—"
+                // Quantized so tiny load changes don't recolor (and redraw) the cell.
+                color = r.accessible && r.cpu >= 1 ? Palette.loadNS((min(r.cpu, 100) / 5).rounded() * 5) : .secondaryLabelColor
             }
-            if !r.accessible, column != .name { field.textColor = .tertiaryLabelColor }
-            return field
+            if !r.accessible, column != .name { color = .tertiaryLabelColor }
+            if field.stringValue != text { field.stringValue = text }
+            if field.textColor != color { field.textColor = color }
         }
 
         func tableView(_ tableView: NSTableView, sortDescriptorsDidChange oldDescriptors: [NSSortDescriptor]) {

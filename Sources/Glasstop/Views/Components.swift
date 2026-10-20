@@ -70,6 +70,7 @@ struct Panel<Content: View, Accessory: View>: View {
                 RoundedRectangle(cornerRadius: 9)
                     .strokeBorder(tint.opacity(0.35), lineWidth: 1)
                     .background(RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(0.025)))
+                    .opacity(UserDefaults.standard.string(forKey: "hide")?.contains("panelbg") == true ? 0 : 1) // TEMP
             )
             .overlay(alignment: .top) {
                 HStack(spacing: 6) {
@@ -101,79 +102,6 @@ extension Panel where Accessory == EmptyView {
     init(title: String, tint: Color = .secondary, trailing: String? = nil,
          @ViewBuilder content: @escaping () -> Content) {
         self.init(title: title, tint: tint, trailing: trailing, accessory: { EmptyView() }, content: content)
-    }
-}
-
-// MARK: Graphs
-
-/// Canvas history graph, right-aligned so new data enters on the right. The fill uses a
-/// vertical gradient, so taller peaks get warmer colors (like btop). Far cheaper than
-/// Swift Charts: one path per draw, no per-point views.
-struct HistoryGraph: View {
-    let values: [Double]
-    let capacity: Int
-    var range: ClosedRange<Double> = 0...100
-    var gradient: Gradient = Palette.loadGradient
-    var showsGrid = true
-    var lineWidth: CGFloat = 1.3
-
-    var body: some View {
-        Canvas { ctx, size in
-            if showsGrid {
-                var grid = Path()
-                for f in [0.25, 0.5, 0.75] {
-                    let y = (size.height * f).rounded() + 0.5
-                    grid.move(to: CGPoint(x: 0, y: y))
-                    grid.addLine(to: CGPoint(x: size.width, y: y))
-                }
-                ctx.stroke(grid, with: .color(.primary.opacity(0.07)), lineWidth: 1)
-            }
-            guard values.count > 1, capacity > 1 else { return }
-
-            let step = size.width / CGFloat(capacity - 1)
-            let offset = CGFloat(capacity - values.count)
-            let span = max(range.upperBound - range.lowerBound, .ulpOfOne)
-
-            var line = Path()
-            for (i, raw) in values.enumerated() {
-                let v = (min(max(raw, range.lowerBound), range.upperBound) - range.lowerBound) / span
-                let point = CGPoint(x: (offset + CGFloat(i)) * step,
-                                    y: lineWidth / 2 + (size.height - lineWidth) * (1 - CGFloat(v)))
-                if i == 0 { line.move(to: point) } else { line.addLine(to: point) }
-            }
-
-            var fill = line
-            fill.addLine(to: CGPoint(x: (offset + CGFloat(values.count - 1)) * step, y: size.height))
-            fill.addLine(to: CGPoint(x: offset * step, y: size.height))
-            fill.closeSubpath()
-
-            let shading = GraphicsContext.Shading.linearGradient(
-                gradient, startPoint: CGPoint(x: 0, y: size.height), endPoint: .zero)
-            var faded = ctx
-            faded.opacity = 0.35
-            faded.fill(fill, with: shading)
-            ctx.stroke(line, with: shading, lineWidth: lineWidth)
-        }
-    }
-}
-
-/// Horizontal meter: track plus a fill that reveals a full-width gradient up to `fraction`.
-struct MeterBar: View {
-    let fraction: Double
-    var gradient: Gradient = Palette.loadGradient
-
-    var body: some View {
-        Canvas { ctx, size in
-            let track = Path(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: size.height / 2)
-            ctx.fill(track, with: .color(.primary.opacity(0.09)))
-            let f = min(max(fraction.isFinite ? fraction : 0, 0), 1)
-            guard f > 0 else { return }
-            let width = max(size.height, size.width * f)
-            let bar = Path(roundedRect: CGRect(x: 0, y: 0, width: width, height: size.height),
-                           cornerRadius: size.height / 2)
-            ctx.fill(bar, with: .linearGradient(gradient, startPoint: .zero, endPoint: CGPoint(x: size.width, y: 0)))
-        }
-        .frame(height: 6)
     }
 }
 
