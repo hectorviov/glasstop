@@ -5,8 +5,8 @@ The project is a git repo now (local only, never pushed): `git log --oneline` sh
 
 ## ☀️ Morning summary (2026-10-20)
 
-**All milestones M0–M8 are implemented and committed** (11 commits). The 24 h soak (M7) started
-at 23:44 and is still running — see "Soak" below; don't quit Glasstop if you want a clean 24 h
+**All milestones M0–M8 are implemented and committed.** The 24 h soak (M7) started
+at 23:44 and is still running (7 h so far: 54–64 MB, no growth, no stalls, leaks flat) — see "Soak" below; don't quit Glasstop if you want a clean 24 h
 run (if you do, the script keeps logging the new instance, but stall counts stop).
 
 What changed overnight, in one line each:
@@ -79,6 +79,8 @@ stalls). Sleep/wake cycles are for you (the stall detector measures uptime, so s
 | 2026-10-20 04:48 | 54.0 MB | 5.92% | — | 0 |
 | 2026-10-20 05:19 | 57.0 MB | 5.83% | — | 0 |
 | 2026-10-20 05:49 | 57.0 MB | 5.71% | 414 | 0 |
+| 2026-10-20 06:20 | 57.0 MB | 5.79% | — | 0 |
+| 2026-10-20 06:50 | 58.0 MB | 5.80% | — | 0 |
 
 ## Milestones
 - **M0 — Build and run: DONE.** Floats over fullscreen apps (accessory policy), ⌘T toggles,
