@@ -8,7 +8,6 @@ struct ProcessPanel: View {
     @AppStorage("processOnlyMine") private var onlyMine = false
     @AppStorage("processHideIdle") private var hideIdle = false
     @AppStorage("processTree") private var tree = false
-    @FocusState private var filterFocused: Bool
 
     private static let myUID = getuid()
 
@@ -42,12 +41,8 @@ struct ProcessPanel: View {
             .menuIndicator(.hidden)
             .fixedSize()
             .help("View options")
-            TextField("filter (⌘F)", text: $filter)
-                .textFieldStyle(.roundedBorder)
-                .controlSize(.small)
+            SearchField(text: $filter, placeholder: "filter (⌘F)", focusRequest: appState.focusFilterRequest)
                 .frame(width: 200)
-                .focused($filterFocused)
-                .onChange(of: appState.focusFilterRequest) { filterFocused = true }
         } content: {
             ProcessTable(rows: rows, tree: tree)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -600,5 +595,57 @@ final class TextLineCache {
         }
         lines[key] = line
         return line
+    }
+}
+
+/// The system search field (magnifier, clear button while there's text, Esc clears), bound to
+/// a SwiftUI string. `focusRequest` changes (⌘F) make it first responder.
+struct SearchField: NSViewRepresentable {
+    @Binding var text: String
+    let placeholder: String
+    let focusRequest: Int
+
+    func makeCoordinator() -> Coordinator { Coordinator(text: $text) }
+
+    func makeNSView(context: Context) -> NSSearchField {
+        let field = NSSearchField()
+        field.placeholderString = placeholder
+        field.controlSize = .small
+        field.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        field.sendsSearchStringImmediately = true
+        field.sendsWholeSearchString = false
+        field.delegate = context.coordinator
+        field.target = context.coordinator
+        field.action = #selector(Coordinator.changed(_:))   // also fires for the clear button
+        field.stringValue = text
+        context.coordinator.lastFocusRequest = focusRequest
+        return field
+    }
+
+    func updateNSView(_ field: NSSearchField, context: Context) {
+        context.coordinator.text = $text
+        if field.stringValue != text { field.stringValue = text }
+        if focusRequest != context.coordinator.lastFocusRequest {
+            context.coordinator.lastFocusRequest = focusRequest
+            field.window?.makeFirstResponder(field)
+        }
+    }
+
+    final class Coordinator: NSObject, NSSearchFieldDelegate {
+        var text: Binding<String>
+        var lastFocusRequest = 0
+
+        init(text: Binding<String>) { self.text = text }
+
+        func controlTextDidChange(_ notification: Notification) {
+            guard let field = notification.object as? NSSearchField else { return }
+            update(field.stringValue)
+        }
+
+        @objc func changed(_ sender: NSSearchField) { update(sender.stringValue) }
+
+        private func update(_ value: String) {
+            if text.wrappedValue != value { text.wrappedValue = value }
+        }
     }
 }
