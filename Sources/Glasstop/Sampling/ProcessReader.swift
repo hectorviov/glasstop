@@ -29,6 +29,13 @@ final class ProcessReader {
         return tb.denom == 0 ? 1 : Double(tb.numer) / Double(tb.denom)
     }()
 
+    /// Drops the CPU baselines (after wake); the next sample returns nil, so the table keeps
+    /// its last rows instead of showing CPU averaged over the sleep.
+    func reset() {
+        previous = [:]
+        lastWallNs = 0
+    }
+
     /// Returns nil on the first call: CPU % needs two samples, and publishing a table of
     /// zeros would flash a meaningless sort order.
     func sample() -> [ProcessRow]? {

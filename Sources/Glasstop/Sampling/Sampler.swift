@@ -33,6 +33,10 @@ final class Sampler {
     private(set) var lastSampleAt = Date.distantPast
     /// Slowest of the last few ticks (ticks alternate between cheap and process-sampling ones).
     private(set) var tickCost: TimeInterval = 0
+    /// Gaps between delivered samples longer than the stall threshold (sampler or main thread
+    /// stuck). Measured in uptime, which doesn't advance during system sleep.
+    @ObservationIgnored private(set) var stallCount = 0
+    @ObservationIgnored private var lastReceiveUptimeNs: UInt64 = 0
     @ObservationIgnored private var recentDurations = RingBuffer<TimeInterval>(capacity: 4)
 
     var cpuTemperature: TempSummary? { TempSummary.combine(temperatures.filter(\.isCPU)) }
@@ -94,6 +98,7 @@ final class Sampler {
         memoryHistory = memoryHistory.resized(to: new.historyCapacity)
         perCoreHistory = perCoreHistory.map { $0.resized(to: new.historyCapacity) }
         cpuTempHistory = cpuTempHistory.resized(to: temperatureHistoryCapacity)
+        lastReceiveUptimeNs = 0            // a slower interval is not a stall
         let processEvery = new.processEveryNTicks, gpuEvery = new.gpuEveryNTicks
         queue.async { [weak self] in
             guard let self else { return }
@@ -119,6 +124,17 @@ final class Sampler {
         temperatureReader.stop()
     }
 
+    /// After wake from sleep: new baselines, and sensors are re-discovered (IOKit services
+    /// can be torn down across sleep).
+    func resetAfterWake() {
+        queue.async { [weak self] in
+            self?.cpuReader.reset()
+            self?.processReader.reset()
+        }
+        temperatureReader.reset()
+        lastReceiveUptimeNs = 0
+    }
+
     // MARK: Background tick
 
     private func tick() {
@@ -140,6 +156,15 @@ final class Sampler {
     // MARK: Main-thread apply
 
     private func receive(_ s: Snapshot) {
+        let nowNs = DispatchTime.now().uptimeNanoseconds
+        if lastReceiveUptimeNs != 0 {
+            let gap = Double(nowNs - lastReceiveUptimeNs) / 1e9
+            if gap > max(2, interval * 3) {
+                stallCount += 1
+                NSLog("Glasstop: sampler stall %.1f s (total %d)", gap, stallCount)
+            }
+        }
+        lastReceiveUptimeNs = nowNs
         onTick?(s)
         // Only the newest process list matters; dropping older ones keeps the queue small.
         if !pendingSnapshots.isEmpty, s.processes != nil {

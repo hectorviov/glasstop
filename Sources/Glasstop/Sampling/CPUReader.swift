@@ -7,6 +7,10 @@ final class CPUReader {
     private let host = mach_host_self()   // cached: mach_host_self() leaks a send right per call
     private var previous: [Ticks] = []
 
+    /// Drops the baseline (after wake): the next sample returns nil instead of averaging
+    /// over the whole sleep.
+    func reset() { previous = [] }
+
     /// Returns nil on the first call (needs two samples for a delta).
     func sample() -> CPUReading? {
         var cpuCount: natural_t = 0

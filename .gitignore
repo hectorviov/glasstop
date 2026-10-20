@@ -4,3 +4,6 @@ build/
 .swiftpm/
 *.xcodeproj/xcuserdata/
 DerivedData/
+
+# soak stderr logs (CSV results are committed)
+soak/*.log

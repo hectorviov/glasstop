@@ -12,6 +12,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private lazy var hotKey = GlobalHotKey { [weak self] in self?.togglePanel() }
     private var appliedCompact = false
     private var menuItems: [String: NSMenuItem] = [:]
+    /// Opts out of App Nap (timer throttling while the window is covered would make the menu
+    /// bar CPU % lag); the system can still idle-sleep.
+    private var activity: NSObjectProtocol?
 
     private static func frameName(compact: Bool) -> String { compact ? "GlasstopCompactPanel" : "GlasstopMainPanel" }
 
@@ -77,9 +80,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if let cpu = snapshot.cpu { status?.update(cpu: cpu.total) }
         }
 
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification,
+                                                          object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.sampler.resetAfterWake() }
+        }
+
         appState.onChange = { [weak self] in self?.applyState() }
         applyState()
 
+        activity = ProcessInfo.processInfo.beginActivity(options: .userInitiatedAllowingIdleSystemSleep,
+                                                         reason: "Live system monitoring")
         showPanel()
         sampler.start()
     }
