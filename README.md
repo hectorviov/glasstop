@@ -13,14 +13,11 @@ Download the latest `Glasstop-x.y.z.dmg` from
 [Releases](https://github.com/hectorviov/glasstop/releases/latest), open it and drag Glasstop
 to the Applications shortcut. Needs an Apple silicon Mac with macOS 14 Sonoma or later.
 
-Releases are signed with a Developer ID and notarized by Apple once the signing secrets are set
-up (see below). A release built without them is ad-hoc signed: macOS blocks its first launch,
-so open it once, then click **Open Anyway** in System Settings → Privacy & Security.
 <img src="docs/screenshots/install-dmg.jpg" alt="The Glasstop disk image: drag Glasstop to Applications" width="480">
 
-Release builds are ad-hoc signed, not notarized, so macOS blocks the first launch: open the app
-once, then click **Open Anyway** in System Settings → Privacy & Security (or run
-`xattr -dr com.apple.quarantine /Applications/Glasstop.app`).
+Releases from 0.9.1 on are signed with a Developer ID and notarized by Apple, so Glasstop opens
+like any other app. 0.9.0 is ad-hoc signed: macOS blocks its first launch, so open it once, then
+click **Open Anyway** in System Settings → Privacy & Security.
 
 ## Build from source
 
