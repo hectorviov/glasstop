@@ -29,7 +29,8 @@ window, right-click for options. Closing the window hides it; quit from the menu
 Status menu: opacity slider and click-through (the window ignores the mouse; turn it off from
 the menu bar item). Process table: right-click for Copy PID / Copy Path / Reveal in Finder /
 Terminate / Force Kill; the filter button has only-my-processes, hide-idle and tree view.
-Filter text, sort order and column layout persist.
+Filter text, sort order and column layout persist. The net panel's title is a dropdown: all Wi-Fi/Ethernet adapters
+(default) or one interface (adapters by name, plus VPN tunnels and VM bridges).
 
 Other scripts: `swift scripts/make-icon.swift` regenerates `Resources/AppIcon.icns`;
 `scripts/soak.sh [hours] [interval_min]` runs the reliability soak (results in `soak/`).

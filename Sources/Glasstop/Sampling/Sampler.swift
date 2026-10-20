@@ -30,6 +30,9 @@ final class Sampler {
     private(set) var network: NetworkReading?
     private(set) var netRxHistory: RingBuffer<Double>       // bytes/s
     private(set) var netTxHistory: RingBuffer<Double>
+    /// BSD name of the interface the net panel measures; nil = all Wi-Fi/Ethernet.
+    private(set) var networkInterface: String? = UserDefaults.standard.string(forKey: Sampler.networkInterfaceKey)
+    static let networkInterfaceKey = "networkInterface"
     private(set) var diskIO: DiskIOReading?
     private(set) var diskReadHistory: RingBuffer<Double>    // bytes/s
     private(set) var diskWriteHistory: RingBuffer<Double>
@@ -92,6 +95,8 @@ final class Sampler {
 
     func start() {
         guard timer == nil else { return }
+        let interface = networkInterface
+        queue.async { [weak self] in self?.networkReader.selected = interface }
         let t = DispatchSource.makeTimerSource(queue: queue)
         t.setEventHandler { [weak self] in self?.tick() }
         schedule(t, interval: settings.interval, startNow: true)
@@ -146,6 +151,18 @@ final class Sampler {
 
     /// After wake from sleep: new baselines, and sensors are re-discovered (IOKit services
     /// can be torn down across sleep).
+    /// Main thread. Switches the measured interface; the net history restarts (a rate series
+    /// mixing two interfaces would be meaningless).
+    func selectNetworkInterface(_ name: String?) {
+        guard name != networkInterface else { return }
+        networkInterface = name
+        UserDefaults.standard.set(name, forKey: Self.networkInterfaceKey)
+        network = nil
+        netRxHistory = RingBuffer(capacity: historyCapacity)
+        netTxHistory = RingBuffer(capacity: historyCapacity)
+        queue.async { [weak self] in self?.networkReader.selected = name }
+    }
+
     func resetAfterWake() {
         queue.async { [weak self] in
             self?.cpuReader.reset()

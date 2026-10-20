@@ -55,7 +55,9 @@ private let rateFormatter: ByteCountFormatter = {
 }()
 
 func formatRate(_ bytesPerSecond: Double) -> String {
-    bytesPerSecond < 1 ? "0 B/s" : rateFormatter.string(fromByteCount: Int64(bytesPerSecond)) + "/s"
+    // ByteCountFormatter says "339 bytes"; keep it as compact as the other units.
+    bytesPerSecond < 1000 ? "\(Int(bytesPerSecond)) B/s"
+                          : rateFormatter.string(fromByteCount: Int64(bytesPerSecond)) + "/s"
 }
 
 /// Compact decimal size for narrow columns: "640 GB", "60.8 GB", "4.2 MB".
@@ -101,7 +103,9 @@ struct NetworkPanel: View {
 
     var body: some View {
         let net = sampler.network
-        Panel(title: "net", tint: .teal, trailing: net.map { $0.interfaces.joined(separator: " ") }) {
+        Panel(title: "net", tint: .teal) {
+            InterfacePicker()
+        } content: {
             VStack(alignment: .leading, spacing: 4) {
                 RateRow(symbol: "arrow.down", label: "Download", rate: net?.rxPerSecond,
                         total: net?.rxTotal, color: .teal)
@@ -120,6 +124,50 @@ struct NetworkPanel: View {
             }
             .font(.system(size: 11))
         }
+    }
+}
+
+/// Dropdown in the net panel's title: all Wi-Fi/Ethernet adapters, or one interface.
+private struct InterfacePicker: View {
+    @Environment(Sampler.self) private var sampler
+
+    var body: some View {
+        let net = sampler.network
+        let selected = sampler.networkInterface
+        var options = net?.available ?? []
+        // Keep a picked interface listed even while it's down, so you can switch back.
+        if let selected, !options.contains(where: { $0.bsdName == selected }) {
+            options.append(NetworkInterface(bsdName: selected, displayName: nil))
+        }
+        let current = selected.map { name in options.first { $0.bsdName == name }?.displayName ?? name }
+            ?? "All" + (net.map { $0.measured.isEmpty ? "" : " (\($0.measured.joined(separator: " ")))" } ?? "")
+
+        return Menu {
+            Picker("Interface", selection: Binding(get: { selected },
+                                                   set: { sampler.selectNetworkInterface($0) })) {
+                Text("All Wi-Fi & Ethernet").tag(String?.none)
+                let physical = options.filter(\.isPhysical), other = options.filter { !$0.isPhysical }
+                if !physical.isEmpty {
+                    Section("Adapters") {
+                        ForEach(physical) { Text($0.label).tag(Optional($0.bsdName)) }
+                    }
+                }
+                if !other.isEmpty {
+                    Section("Other (VPN, bridges…)") {
+                        ForEach(other) { Text($0.label).tag(Optional($0.bsdName)) }
+                    }
+                }
+            }
+            .pickerStyle(.inline)
+            .labelsHidden()
+        } label: {
+            Text(current)
+                .font(.system(size: 11))
+                .lineLimit(1)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("Network interface to measure")
     }
 }
 
