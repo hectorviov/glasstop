@@ -30,4 +30,11 @@ struct RingBuffer<T> {
         guard !storage.isEmpty else { return nil }
         return storage.count < capacity ? storage.last : storage[(head - 1 + capacity) % capacity]
     }
+
+    /// A buffer with a new capacity holding the newest values that fit.
+    func resized(to newCapacity: Int) -> RingBuffer<T> {
+        var copy = RingBuffer(capacity: newCapacity)
+        for value in values.suffix(copy.capacity) { copy.append(value) }
+        return copy
+    }
 }

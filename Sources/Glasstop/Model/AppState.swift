@@ -18,6 +18,7 @@ final class AppState {
     private(set) var opacity: Double              // 0.3...1
     private(set) var clickThrough = false
     private(set) var hotKeyEnabled: Bool
+    private(set) var samplerSettings = SamplerSettings.load()
     /// Bumped by ⌘F; the process panel focuses its filter field when it changes.
     private(set) var focusFilterRequest = 0
 
@@ -59,6 +60,13 @@ final class AppState {
     func setHotKeyEnabled(_ on: Bool) {
         hotKeyEnabled = on
         UserDefaults.standard.set(on, forKey: Key.hotKey)
+        onChange?()
+    }
+
+    func setSamplerSettings(_ settings: SamplerSettings) {
+        guard settings != samplerSettings else { return }
+        samplerSettings = settings
+        settings.save()
         onChange?()
     }
 

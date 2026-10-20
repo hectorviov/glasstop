@@ -3,8 +3,9 @@ import SwiftUI
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
-    private let sampler = Sampler()
     private let appState = AppState()
+    private lazy var sampler = Sampler(settings: appState.samplerSettings)
+    private var settingsWindow: NSWindow?
     private var panel: NSPanel?
     private var hosting: NSView?
     private var statusItem: StatusItemController?
@@ -70,6 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let status = StatusItemController(appState: appState)
         status.togglePanel = { [weak self] in self?.togglePanel() }
         status.isPanelVisible = { [weak self] in self?.panel?.isVisible == true }
+        status.openSettings = { [weak self] in self?.showSettings(nil) }
         statusItem = status
         sampler.onTick = { [weak status] snapshot in
             if let cpu = snapshot.cpu { status?.update(cpu: cpu.total) }
@@ -125,6 +127,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         panel.alphaValue = appState.opacity
         panel.ignoresMouseEvents = appState.clickThrough
 
+        sampler.apply(appState.samplerSettings)
         if appState.hotKeyEnabled {
             if !hotKey.register() {
                 NSLog("Glasstop: global hotkey %@ is unavailable (taken by another app?)", GlobalHotKey.displayString)
@@ -171,6 +174,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc private func showCompact(_ sender: Any?) { appState.setCompact(true) }
     @objc private func toggleClickThrough(_ sender: Any?) { appState.setClickThrough(!appState.clickThrough) }
 
+    @objc private func showSettings(_ sender: Any?) {
+        if settingsWindow == nil {
+            let window = NSWindow(contentViewController: NSHostingController(
+                rootView: SettingsView().environment(appState)))
+            window.title = "Glasstop Settings"
+            window.styleMask = [.titled, .closable]
+            window.level = .floating            // above the (floating) main panel
+            window.isReleasedWhenClosed = false
+            window.center()
+            settingsWindow = window
+        }
+        settingsWindow?.makeKeyAndOrderFront(nil)
+        NSApp.activate()
+    }
+
     /// ⌘F: full mode, panel visible, focus the process filter.
     @objc private func findProcess(_ sender: Any?) {
         appState.setCompact(false)
@@ -184,6 +202,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
         appMenu.addItem(withTitle: "About Glasstop", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        appMenu.addItem(.separator())
+        appMenu.addItem(item("settings", "Settings…", #selector(showSettings(_:)), ","))
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Hide Glasstop", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         appMenu.addItem(withTitle: "Quit Glasstop", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")

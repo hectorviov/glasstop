@@ -54,7 +54,7 @@ struct StaleBadge: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             let age = context.date.timeIntervalSince(sampler.lastSampleAt)
-            let stale = age > 2
+            let stale = age > max(2, sampler.interval * 3)
             HStack(spacing: 4) {
                 Circle().fill(stale ? Color.red : Color.green).frame(width: 7, height: 7)
                 Text(stale ? String(format: "stalled %.0fs", min(age, 9999))

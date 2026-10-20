@@ -6,24 +6,27 @@ import Observation
 @Observable
 final class Sampler {
     // MARK: Config
-    static let interval: TimeInterval = 0.5
-    static let historyCapacity = 240              // 2 min at 0.5 s
-    static let processEveryNTicks = 2             // 1 s
-    static let gpuEveryNTicks = 2                 // 1 s
     static let temperatureStaleAfter: TimeInterval = 10
+
+    /// Current cadence (Settings window). Change with `apply(_:)`.
+    private(set) var settings: SamplerSettings
+    var interval: TimeInterval { settings.interval }
+    var historyCapacity: Int { settings.historyCapacity }
+    var temperatureHistoryCapacity: Int {
+        min(max(Int(Double(settings.historySeconds) / TemperatureReader.interval), 2), SamplerSettings.maxHistoryPoints)
+    }
 
     // MARK: Published state (mutated on main only)
     let system: SystemInfo
     private(set) var cpuTotal: Double = 0
     private(set) var perCore: [Double] = []
-    private(set) var cpuHistory = RingBuffer<Double>(capacity: Sampler.historyCapacity)
+    private(set) var cpuHistory: RingBuffer<Double>
     private(set) var perCoreHistory: [RingBuffer<Double>] = []
     private(set) var memory: MemoryReading?
-    private(set) var memoryHistory = RingBuffer<Double>(capacity: Sampler.historyCapacity)
+    private(set) var memoryHistory: RingBuffer<Double>
     private(set) var gpuUsage: Double?
-    private(set) var gpuHistory = RingBuffer<Double>(capacity: Sampler.historyCapacity / Sampler.gpuEveryNTicks)
     private(set) var temperatures: [TempGroupReading] = []
-    private(set) var cpuTempHistory = RingBuffer<Double>(capacity: Sampler.historyCapacity / 2)
+    private(set) var cpuTempHistory: RingBuffer<Double>
     private(set) var lastTemperatureAt = Date.distantPast
     private(set) var processes: [ProcessRow] = []
     private(set) var loadAverage = LoadAverage(one: 0, five: 0, fifteen: 0)
@@ -46,27 +49,58 @@ final class Sampler {
     @ObservationIgnored private let queue = DispatchQueue(label: "com.hectorviov.glasstop.sampler", qos: .utility)
     @ObservationIgnored private var timer: DispatchSourceTimer?
     @ObservationIgnored private var tickCount = 0
+    @ObservationIgnored private var processEveryNTicks: Int     // queue-side copies of the cadence
+    @ObservationIgnored private var gpuEveryNTicks: Int
     @ObservationIgnored private let cpuReader = CPUReader()
     @ObservationIgnored private let memoryReader = MemoryReader()
     @ObservationIgnored private let processReader = ProcessReader()
     @ObservationIgnored private let gpuReader = GPUReader()
     @ObservationIgnored private let temperatureReader: TemperatureReader
 
-    init() {
+    init(settings: SamplerSettings = .load()) {
         let system = SystemInfo.read()
         self.system = system
+        self.settings = settings
+        processEveryNTicks = settings.processEveryNTicks
+        gpuEveryNTicks = settings.gpuEveryNTicks
+        cpuHistory = RingBuffer(capacity: settings.historyCapacity)
+        memoryHistory = RingBuffer(capacity: settings.historyCapacity)
+        cpuTempHistory = RingBuffer(capacity: 2)
         temperatureReader = TemperatureReader(coreGroups: system.coreGroups)
+        cpuTempHistory = RingBuffer(capacity: temperatureHistoryCapacity)
     }
 
     func start() {
         guard timer == nil else { return }
         let t = DispatchSource.makeTimerSource(queue: queue)
-        // A DispatchSource timer coalesces missed fires: a slow tick never piles up.
-        t.schedule(deadline: .now(), repeating: Self.interval, leeway: .milliseconds(50))
         t.setEventHandler { [weak self] in self?.tick() }
+        schedule(t, interval: settings.interval, startNow: true)
         t.resume()
         timer = t
         temperatureReader.start { [weak self] in self?.receiveTemperatures($0) }
+    }
+
+    /// A DispatchSource timer coalesces missed fires: a slow tick never piles up.
+    private func schedule(_ t: DispatchSourceTimer, interval: TimeInterval, startNow: Bool) {
+        let leeway = DispatchTimeInterval.milliseconds(max(10, Int(interval * 100)))   // 10%
+        t.schedule(deadline: startNow ? .now() : .now() + interval, repeating: interval, leeway: leeway)
+    }
+
+    /// Main thread. Applies a new cadence live: buffers keep their newest points.
+    func apply(_ new: SamplerSettings) {
+        guard new != settings else { return }
+        settings = new
+        cpuHistory = cpuHistory.resized(to: new.historyCapacity)
+        memoryHistory = memoryHistory.resized(to: new.historyCapacity)
+        perCoreHistory = perCoreHistory.map { $0.resized(to: new.historyCapacity) }
+        cpuTempHistory = cpuTempHistory.resized(to: temperatureHistoryCapacity)
+        let processEvery = new.processEveryNTicks, gpuEvery = new.gpuEveryNTicks
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.processEveryNTicks = processEvery
+            self.gpuEveryNTicks = gpuEvery
+            if let timer = self.timer { self.schedule(timer, interval: new.interval, startNow: false) }
+        }
     }
 
     /// Set by the window owner. While false, nothing is published to SwiftUI (no view
@@ -93,8 +127,8 @@ final class Sampler {
 
         let cpu = cpuReader.sample()
         let memory = memoryReader.sample()
-        let gpu = tickCount % Self.gpuEveryNTicks == 0 ? gpuReader.sample() : nil
-        let procs = tickCount % Self.processEveryNTicks == 0 ? processReader.sample() : nil
+        let gpu = tickCount % gpuEveryNTicks == 0 ? gpuReader.sample() : nil
+        let procs = tickCount % processEveryNTicks == 0 ? processReader.sample() : nil
 
         let duration = Double(DispatchTime.now().uptimeNanoseconds - startNs) / 1e9
         let snapshot = Snapshot(timestamp: Date(), duration: duration, cpu: cpu, memory: memory,
@@ -112,8 +146,8 @@ final class Sampler {
             pendingSnapshots[pendingSnapshots.count - 1].processes = nil
         }
         pendingSnapshots.append(s)
-        if pendingSnapshots.count > Self.historyCapacity {
-            pendingSnapshots.removeFirst(pendingSnapshots.count - Self.historyCapacity)
+        if pendingSnapshots.count > historyCapacity {
+            pendingSnapshots.removeFirst(pendingSnapshots.count - historyCapacity)
         }
         if isVisible { flushPending() }
     }
@@ -142,7 +176,7 @@ final class Sampler {
 
             var histories = perCoreHistory
             if histories.count != c.perCore.count {
-                histories = c.perCore.map { _ in RingBuffer<Double>(capacity: Self.historyCapacity) }
+                histories = c.perCore.map { _ in RingBuffer<Double>(capacity: historyCapacity) }
             }
             for (i, v) in c.perCore.enumerated() { histories[i].append(v) }
             perCoreHistory = histories
@@ -151,10 +185,7 @@ final class Sampler {
             memory = m
             memoryHistory.append(m.usedPercent)
         }
-        if let g = s.gpu {
-            gpuUsage = g
-            gpuHistory.append(g)
-        }
+        if let g = s.gpu { gpuUsage = g }
         if let p = s.processes { processes = p }
 
         loadAverage = s.load

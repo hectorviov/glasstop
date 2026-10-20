@@ -14,6 +14,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     // Callbacks into AppDelegate.
     var togglePanel: () -> Void = {}
     var isPanelVisible: () -> Bool = { true }
+    var openSettings: () -> Void = {}
 
     private let showItem = NSMenuItem(title: "Show Glasstop", action: #selector(toggle(_:)), keyEquivalent: "")
     private let onTopItem = NSMenuItem(title: "Keep on Top", action: #selector(toggleOnTop(_:)), keyEquivalent: "t")
@@ -45,6 +46,9 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         menu.addItem(opacityMenuItem())
         menu.addItem(.separator())
         menu.addItem(hotKeyItem)
+        let settings = NSMenuItem(title: "Settings…", action: #selector(showSettings(_:)), keyEquivalent: ",")
+        settings.target = self
+        menu.addItem(settings)
         menu.addItem(.separator())
         let quit = NSMenuItem(title: "Quit Glasstop", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.addItem(quit)
@@ -103,6 +107,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     }
 
     @objc private func toggle(_ sender: Any?) { togglePanel() }
+    @objc private func showSettings(_ sender: Any?) { openSettings() }
     @objc private func toggleOnTop(_ sender: Any?) { appState.setAlwaysOnTop(!appState.alwaysOnTop) }
     @objc private func toggleCompact(_ sender: Any?) { appState.setCompact(!appState.compact) }
     @objc private func toggleClickThrough(_ sender: Any?) { appState.setClickThrough(!appState.clickThrough) }

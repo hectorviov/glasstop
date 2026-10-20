@@ -17,7 +17,7 @@ struct HistoryGraph: NSViewRepresentable {
     var showsGrid = true
     var lineWidth: CGFloat = 1.3
     /// Seconds between samples; with `format`, enables a hover marker showing the exact value.
-    var interval: TimeInterval = Sampler.interval
+    var interval: TimeInterval = SamplerSettings.default.interval
     var format: ((Double) -> String)? = nil
 
     func makeNSView(context: Context) -> GraphLayerView { GraphLayerView() }

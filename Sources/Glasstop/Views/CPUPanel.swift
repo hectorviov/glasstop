@@ -17,7 +17,8 @@ struct CPUPanel: View {
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .background(alignment: .leading) {
                     VStack(alignment: .leading, spacing: 4) {
-                        HistoryGraph(values: sampler.cpuHistory.values, capacity: Sampler.historyCapacity,
+                        HistoryGraph(values: sampler.cpuHistory.values, capacity: sampler.historyCapacity,
+                                     interval: sampler.interval,
                                      format: { String(format: "%.1f%%", $0) })
                         HStack {
                             Text(String(format: "total %.1f%%", sampler.cpuTotal))
@@ -75,11 +76,13 @@ private struct CoreList: View {
     }
 
     private func coreRow(_ cpu: Int, group: CoreGroup) -> CoreRow {
-        CoreRow(index: cpu,
-                value: cpu < sampler.perCore.count ? sampler.perCore[cpu] : 0,
-                history: cpu < sampler.perCoreHistory.count
-                    ? Array(sampler.perCoreHistory[cpu].values.suffix(CoreRow.points)) : [],
-                tint: Palette.groupTint(group.id))
+        let points = CoreRow.points(interval: sampler.interval)
+        return CoreRow(index: cpu,
+                       value: cpu < sampler.perCore.count ? sampler.perCore[cpu] : 0,
+                       history: cpu < sampler.perCoreHistory.count
+                           ? Array(sampler.perCoreHistory[cpu].values.suffix(points)) : [],
+                       points: points,
+                       tint: Palette.groupTint(group.id))
     }
 
     private func average(_ cpus: [Int]) -> Double {
@@ -127,11 +130,13 @@ private struct GroupHeader: View {
 
 /// "C12 ▁▂▃▅ 30%"
 private struct CoreRow: View {
-    static let points = 60     // last 30 s
+    /// Sparklines show the last 30 s.
+    static func points(interval: TimeInterval) -> Int { max(Int((30 / interval).rounded()), 2) }
 
     let index: Int
     let value: Double
     let history: [Double]
+    let points: Int
     let tint: Color
 
     var body: some View {
@@ -139,7 +144,7 @@ private struct CoreRow: View {
             Text("C\(index)")
                 .foregroundStyle(tint.opacity(0.85))
                 .frame(width: 26, alignment: .leading)
-            HistoryGraph(values: history, capacity: Self.points, showsGrid: false, lineWidth: 1)
+            HistoryGraph(values: history, capacity: points, showsGrid: false, lineWidth: 1)
                 .frame(height: 13)
             Numeric(text: String(format: "%.0f%%", value), width: 32, color: loadColor(value))
         }
