@@ -27,7 +27,7 @@ struct ProcessPanel: View {
 
     var body: some View {
         let rows = self.rows
-        Panel(title: "proc", tint: .blue, trailing: "\(rows.count)") {
+        Panel(title: "PROC", tint: .blue, trailing: "\(rows.count)") {
             Menu {
                 Toggle("Only My Processes", isOn: $onlyMine)
                 Toggle("Hide Idle Processes", isOn: $hideIdle)
@@ -41,7 +41,7 @@ struct ProcessPanel: View {
             .menuIndicator(.hidden)
             .fixedSize()
             .help("View options")
-            SearchField(text: $filter, placeholder: "filter (⌘F)", focusRequest: appState.focusFilterRequest)
+            SearchField(text: $filter, placeholder: "Filter (⌘F)", focusRequest: appState.focusFilterRequest)
                 .frame(width: 200)
                 // The search bezel is translucent by design; a solid backing keeps the material
                 // (and whatever is behind the window) from showing through.

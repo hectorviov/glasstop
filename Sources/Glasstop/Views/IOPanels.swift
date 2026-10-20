@@ -103,7 +103,7 @@ struct NetworkPanel: View {
 
     var body: some View {
         let net = sampler.network
-        Panel(title: "net", tint: .teal) {
+        Panel(title: "NET", tint: .teal) {
             InterfacePicker()
         } content: {
             VStack(alignment: .leading, spacing: 4) {
@@ -200,7 +200,7 @@ struct DiskPanel: View {
 
     var body: some View {
         let io = sampler.diskIO
-        Panel(title: "disks", tint: .pink,
+        Panel(title: "DISKS", tint: .pink,
               trailing: io.map { "R \(formatRate($0.readPerSecond)) · W \(formatRate($0.writePerSecond))" }) {
             VStack(alignment: .leading, spacing: 5) {
                 if sampler.volumes.isEmpty {

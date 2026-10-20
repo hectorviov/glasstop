@@ -8,7 +8,7 @@ struct CPUPanel: View {
     static let spacing: CGFloat = 14
 
     var body: some View {
-        Panel(title: "cpu", tint: .green, trailing: uptimeText) {
+        Panel(title: "CPU", tint: .green, trailing: uptimeText) {
             // The core list sets the box height; the graph fills exactly that height as a
             // background. (An "equal-height columns" .fixedSize layout gave the graph's layer
             // an enormous backing store: ~90 MB of GPU memory.)

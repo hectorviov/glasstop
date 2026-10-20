@@ -5,7 +5,7 @@ struct MemoryPanel: View {
     @Environment(Sampler.self) private var sampler
 
     var body: some View {
-        Panel(title: "mem", tint: .yellow, trailing: sampler.memory.map { "\(formatBytes($0.total)) total" }) {
+        Panel(title: "MEM", tint: .yellow, trailing: sampler.memory.map { "\(formatBytes($0.total)) total" }) {
             if let m = sampler.memory {
                 VStack(alignment: .leading, spacing: 5) {
                     MemoryRow(label: "Used", bytes: m.used, total: m.total, gradient: Palette.loadGradient)
@@ -64,7 +64,7 @@ struct SensorsPanel: View {
     @Environment(Sampler.self) private var sampler
 
     var body: some View {
-        Panel(title: "sensors", tint: .orange, trailing: trailing) {
+        Panel(title: "SENSORS", tint: .orange, trailing: trailing) {
             if sampler.temperatures.isEmpty {
                 Text("no sensors").font(.system(size: 11)).foregroundStyle(.secondary)
             } else {
