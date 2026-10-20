@@ -46,6 +46,9 @@ struct TempSummary {
 
 struct ProcessRow: Identifiable, Hashable {
     let pid: pid_t
+    let ppid: pid_t
+    let uid: uid_t
+    let start: UInt64          // start time (s since epoch): pid + start identifies a process
     let name: String
     let path: String
     let user: String

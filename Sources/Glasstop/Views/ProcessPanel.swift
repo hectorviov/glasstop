@@ -5,22 +5,43 @@ struct ProcessPanel: View {
     @Environment(Sampler.self) private var sampler
     @Environment(AppState.self) private var appState
     @AppStorage("processFilter") private var filter = ""
+    @AppStorage("processOnlyMine") private var onlyMine = false
+    @AppStorage("processHideIdle") private var hideIdle = false
+    @AppStorage("processTree") private var tree = false
     @FocusState private var filterFocused: Bool
+
+    private static let myUID = getuid()
 
     private var rows: [ProcessRow] {
         let f = filter.trimmingCharacters(in: .whitespaces)
-        guard !f.isEmpty else { return sampler.processes }
+        guard !f.isEmpty || onlyMine || hideIdle else { return sampler.processes }
         return sampler.processes.filter {
-            $0.name.localizedCaseInsensitiveContains(f)
-                || $0.path.localizedCaseInsensitiveContains(f)
-                || $0.user.localizedCaseInsensitiveContains(f)
-                || String($0.pid).hasPrefix(f)
+            (!onlyMine || $0.uid == Self.myUID)
+                && (!hideIdle || $0.cpu > 0 || $0.memory > 0)
+                && (f.isEmpty
+                    || $0.name.localizedCaseInsensitiveContains(f)
+                    || $0.path.localizedCaseInsensitiveContains(f)
+                    || $0.user.localizedCaseInsensitiveContains(f)
+                    || String($0.pid).hasPrefix(f))
         }
     }
 
     var body: some View {
         let rows = self.rows
         Panel(title: "proc", tint: .blue, trailing: "\(rows.count)") {
+            Menu {
+                Toggle("Only My Processes", isOn: $onlyMine)
+                Toggle("Hide Idle Processes", isOn: $hideIdle)
+                Divider()
+                Toggle("Tree View", isOn: $tree)
+            } label: {
+                Image(systemName: onlyMine || hideIdle || tree
+                      ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("View options")
             TextField("filter (⌘F)", text: $filter)
                 .textFieldStyle(.roundedBorder)
                 .controlSize(.small)
@@ -28,7 +49,7 @@ struct ProcessPanel: View {
                 .focused($filterFocused)
                 .onChange(of: appState.focusFilterRequest) { filterFocused = true }
         } content: {
-            ProcessTable(rows: rows)
+            ProcessTable(rows: rows, tree: tree)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
@@ -41,6 +62,7 @@ struct ProcessPanel: View {
 /// reordering.
 struct ProcessTable: NSViewRepresentable {
     let rows: [ProcessRow]
+    var tree = false
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -74,6 +96,9 @@ struct ProcessTable: NSViewRepresentable {
         table.dataSource = context.coordinator
         table.delegate = context.coordinator
         context.coordinator.tableView = table
+        let menu = NSMenu()
+        menu.delegate = context.coordinator
+        table.menu = menu
 
         let scroll = NSScrollView()
         scroll.documentView = table
@@ -88,6 +113,7 @@ struct ProcessTable: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: NSScrollView, context: Context) {
+        context.coordinator.tree = tree
         context.coordinator.update(rows)
     }
 
@@ -146,9 +172,11 @@ struct ProcessTable: NSViewRepresentable {
         }
     }
 
-    final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
+    final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSMenuDelegate {
         weak var tableView: NSTableView?
         private var rows: [ProcessRow] = []
+        private var depths: [Int] = []          // tree depth per row (all 0 in flat mode)
+        var tree = false
         private var resizeObserver: NSObjectProtocol?
 
         deinit {
@@ -189,7 +217,7 @@ struct ProcessTable: NSViewRepresentable {
         func update(_ newRows: [ProcessRow]) {
             guard let tableView else { return }
             let oldCount = rows.count
-            rows = sorted(newRows)
+            (rows, depths) = ordered(newRows)
             isUpdating = true
             if rows.count > oldCount {
                 tableView.insertRows(at: IndexSet(oldCount..<rows.count), withAnimation: [])
@@ -206,6 +234,7 @@ struct ProcessTable: NSViewRepresentable {
             let visible = tableView.rows(in: tableView.visibleRect)
             for i in visible.location..<min(visible.location + visible.length, rows.count) {
                 guard let view = tableView.rowView(atRow: i, makeIfNecessary: false) as? ProcessRowView else { continue }
+                view.depth = depths[i]
                 view.process = rows[i]
                 if forceRedraw { view.needsDisplay = true }
             }
@@ -222,21 +251,55 @@ struct ProcessTable: NSViewRepresentable {
             }
         }
 
-        private func sorted(_ input: [ProcessRow]) -> [ProcessRow] {
+        /// Flat: sorted by the table's sort descriptor. Tree: parents before children, siblings
+        /// sorted by the same descriptor.
+        private func ordered(_ input: [ProcessRow]) -> ([ProcessRow], [Int]) {
+            let less = comparator()
+            guard tree else { return (input.sorted(by: less), Array(repeating: 0, count: input.count)) }
+
+            let present = Set(input.map(\.pid))
+            var children: [pid_t: [ProcessRow]] = [:]
+            var roots: [ProcessRow] = []
+            for row in input {
+                if row.ppid != row.pid, present.contains(row.ppid) {
+                    children[row.ppid, default: []].append(row)
+                } else {
+                    roots.append(row)
+                }
+            }
+            var out: [ProcessRow] = [], depths: [Int] = [], seen = Set<pid_t>()
+            out.reserveCapacity(input.count)
+            depths.reserveCapacity(input.count)
+            var stack: [(ProcessRow, Int)] = roots.sorted(by: less).reversed().map { ($0, 0) }
+            while let (row, depth) = stack.popLast() {
+                guard seen.insert(row.pid).inserted else { continue }
+                out.append(row)
+                depths.append(depth)
+                for child in (children[row.pid] ?? []).sorted(by: less).reversed() { stack.append((child, depth + 1)) }
+            }
+            // Anything unreachable (a parent cycle from racing pid reuse) still gets listed.
+            for row in input where !seen.contains(row.pid) {
+                out.append(row)
+                depths.append(0)
+            }
+            return (out, depths)
+        }
+
+        private func comparator() -> (ProcessRow, ProcessRow) -> Bool {
             guard let descriptor = tableView?.sortDescriptors.first,
-                  let key = descriptor.key.flatMap(Column.init(rawValue:)) else { return input }
+                  let key = descriptor.key.flatMap(Column.init(rawValue:)) else { return { $0.pid < $1.pid } }
             let asc = descriptor.ascending
             // Ties break on pid so equal rows never swap places between refreshes.
-            return input.sorted { a, b in
+            return { [unowned self] a, b in
                 let order: ComparisonResult
                 switch key {
-                case .pid: order = compare(a.pid, b.pid)
+                case .pid: order = self.compare(a.pid, b.pid)
                 case .name: order = a.name.localizedCaseInsensitiveCompare(b.name)
                 case .command: order = a.path.localizedCaseInsensitiveCompare(b.path)
-                case .threads: order = compare(a.threads, b.threads)
+                case .threads: order = self.compare(a.threads, b.threads)
                 case .user: order = a.user.localizedCaseInsensitiveCompare(b.user)
-                case .memory: order = compare(a.memory, b.memory)
-                case .cpu: order = compare(a.cpu, b.cpu)
+                case .memory: order = self.compare(a.memory, b.memory)
+                case .cpu: order = self.compare(a.cpu, b.cpu)
                 }
                 if order == .orderedSame { return a.pid < b.pid }
                 return asc ? order == .orderedAscending : order == .orderedDescending
@@ -256,6 +319,7 @@ struct ProcessTable: NSViewRepresentable {
                 ?? ProcessRowView(identifier: Self.rowIdentifier)
             view.table = tableView
             view.striped = row % 2 == 1
+            view.depth = row < depths.count ? depths[row] : 0
             view.process = row < rows.count ? rows[row] : nil
             return view
         }
@@ -279,7 +343,7 @@ struct ProcessTable: NSViewRepresentable {
                 UserDefaults.standard.set(key, forKey: Self.sortKeyDefault)
                 UserDefaults.standard.set(d.ascending, forKey: Self.sortAscendingDefault)
             }
-            rows = sorted(rows)
+            (rows, depths) = ordered(rows)
             refreshVisibleRows()
             restoreSelection()
         }
@@ -291,6 +355,82 @@ struct ProcessTable: NSViewRepresentable {
             guard !isUpdating, let tableView else { return }
             let i = tableView.selectedRow
             selectedPID = i >= 0 && i < rows.count ? rows[i].pid : nil
+        }
+
+        // MARK: Context menu
+
+        private var menuTarget: ProcessRow?
+
+        func menuNeedsUpdate(_ menu: NSMenu) {
+            menu.removeAllItems()
+            guard let tableView, tableView.clickedRow >= 0, tableView.clickedRow < rows.count else {
+                menuTarget = nil
+                return
+            }
+            let p = rows[tableView.clickedRow]
+            menuTarget = p
+            let header = NSMenuItem(title: "\(p.name) (\(p.pid))", action: nil, keyEquivalent: "")
+            header.isEnabled = false
+            menu.addItem(header)
+            menu.addItem(.separator())
+            menu.addItem(item("Copy PID", #selector(copyPID(_:)), enabled: true))
+            menu.addItem(item("Copy Path", #selector(copyPath(_:)), enabled: !p.path.isEmpty))
+            menu.addItem(item("Reveal in Finder", #selector(revealInFinder(_:)), enabled: !p.path.isEmpty))
+            menu.addItem(.separator())
+            // Other users' processes can't be signalled without privileges.
+            let mine = p.uid == getuid() && p.pid > 1
+            menu.addItem(item("Terminate (SIGTERM)", #selector(terminate(_:)), enabled: mine))
+            menu.addItem(item("Force Kill (SIGKILL)…", #selector(forceKill(_:)), enabled: mine))
+        }
+
+        private func item(_ title: String, _ action: Selector, enabled: Bool) -> NSMenuItem {
+            let menuItem = NSMenuItem(title: title, action: enabled ? action : nil, keyEquivalent: "")
+            menuItem.target = self
+            menuItem.isEnabled = enabled
+            return menuItem
+        }
+
+        @objc private func copyPID(_ sender: Any?) {
+            guard let p = menuTarget else { return }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(String(p.pid), forType: .string)
+        }
+
+        @objc private func copyPath(_ sender: Any?) {
+            guard let p = menuTarget, !p.path.isEmpty else { return }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(p.path, forType: .string)
+        }
+
+        @objc private func revealInFinder(_ sender: Any?) {
+            guard let p = menuTarget, !p.path.isEmpty else { return }
+            NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: p.path)])
+        }
+
+        @objc private func terminate(_ sender: Any?) {
+            guard let p = menuTarget else { return }
+            report(ProcessSignal.send(SIGTERM, to: p), for: p)
+        }
+
+        @objc private func forceKill(_ sender: Any?) {
+            guard let p = menuTarget else { return }
+            let alert = NSAlert()
+            alert.messageText = "Force kill “\(p.name)” (PID \(p.pid))?"
+            alert.informativeText = "The process ends immediately. Unsaved work in it will be lost."
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "Force Kill")
+            alert.addButton(withTitle: "Cancel")
+            alert.buttons.first?.hasDestructiveAction = true
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            report(ProcessSignal.send(SIGKILL, to: p), for: p)
+        }
+
+        private func report(_ result: ProcessSignal.Result, for p: ProcessRow) {
+            guard case .failed(let message) = result else { return }
+            let alert = NSAlert()
+            alert.messageText = "Couldn’t signal “\(p.name)” (PID \(p.pid))"
+            alert.informativeText = message
+            alert.runModal()
         }
     }
 }
@@ -304,6 +444,10 @@ final class ProcessRowView: NSTableRowView {
     var striped = false {
         didSet { if striped != oldValue { needsDisplay = true } }
     }
+    var depth = 0 {
+        didSet { if depth != oldValue { needsDisplay = true } }
+    }
+    private static let indentPerLevel: CGFloat = 10
 
     private static let font = NSFont.monospacedDigitSystemFont(ofSize: 11.5, weight: .regular)
 
@@ -338,10 +482,16 @@ final class ProcessRowView: NSTableRowView {
         for (index, tableColumn) in table.tableColumns.enumerated() {
             guard let column = ProcessTable.Column(rawValue: tableColumn.identifier.rawValue) else { continue }
             let columnRect = table.rect(ofColumn: index)
-            let x = columnRect.minX + inset
-            let width = columnRect.width - 2 * inset
+            var x = columnRect.minX + inset
+            var width = columnRect.width - 2 * inset
+            var (text, color) = column.content(process)
+            if column == .name, depth > 0 {
+                let indent = CGFloat(min(depth - 1, 8)) * Self.indentPerLevel
+                x += indent
+                width -= indent
+                text = "└ " + text
+            }
             guard width > 4, x < dirtyRect.maxX, x + width > dirtyRect.minX else { continue }
-            let (text, color) = column.content(process)
             let line = TextLineCache.shared.line(text, width: width, column: column, font: Self.font)
             let lineWidth = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
             let dx = column.alignment == .right ? max(width - lineWidth, 0) : 0

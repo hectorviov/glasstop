@@ -2,7 +2,9 @@ import Darwin
 import Foundation
 
 /// Process list via libproc (same source as top/btop). One proc_pidinfo call per pid
-/// for name/uid/cpu/threads, plus proc_pid_rusage for the memory footprint.
+/// for name/uid/cpu/threads, plus proc_pid_rusage for the memory footprint. Other users'
+/// processes (root daemons, WindowServer...) refuse task and BSD info without privileges;
+/// those come from sysctl KERN_PROC (uid, ppid, name, start) and show "—" for cpu/memory.
 final class ProcessReader {
     /// Idle processes (< 0.1% CPU) re-read their footprint only every N samples.
     static let idleFootprintEveryNSamples = 5
@@ -18,6 +20,7 @@ final class ProcessReader {
     private var lastWallNs: UInt64 = 0
     private var pidBuffer = [pid_t](repeating: 0, count: 4096)
     private var pathBuffer = [CChar](repeating: 0, count: 4096)   // PROC_PIDPATHINFO_MAXSIZE
+    private var kinfoBuffer: [kinfo_proc] = []
 
     /// pti_total_user/system are in mach absolute time units (NOT ns on Apple Silicon).
     private let ticksToNs: Double = {
@@ -46,6 +49,7 @@ final class ProcessReader {
         nextPrev.reserveCapacity(n)
         var nextIdentities: [pid_t: Identity] = [:]
         nextIdentities.reserveCapacity(n)
+        var others: [pid_t: kinfo_proc]?    // fetched lazily, once per sample
 
         for i in 0..<min(n, pidBuffer.count) {
             let pid = pidBuffer[i]
@@ -74,9 +78,14 @@ final class ProcessReader {
                 }
                 nextPrev[pid] = Prev(start: start, cpuNs: cpuNs, footprint: memory, footprintAge: age)
 
-                let id = identity(pid, bsd: bsd, into: &nextIdentities)
+                let id = identity(pid, start: start, comm: bsd.pbi_comm,
+                                  names: [stringFromCTuple(bsd.pbi_name), stringFromCTuple(bsd.pbi_comm)],
+                                  into: &nextIdentities)
                 rows.append(ProcessRow(
                     pid: pid,
+                    ppid: pid_t(bsd.pbi_ppid),
+                    uid: bsd.pbi_uid,
+                    start: start,
                     name: id.name,
                     path: id.path,
                     user: userName(bsd.pbi_uid),
@@ -86,16 +95,22 @@ final class ProcessReader {
                     accessible: true
                 ))
             } else {
-                // Other users' processes (root, _windowserver...) — no task info without privileges.
-                var bsd = proc_bsdinfo()
-                let bsdSize = Int32(MemoryLayout<proc_bsdinfo>.size)
-                guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &bsd, bsdSize) == bsdSize else { continue }
-                let id = identity(pid, bsd: bsd, into: &nextIdentities)
+                // Other users' processes: PROC_PIDTBSDINFO is refused too, kinfo_proc isn't. One
+                // KERN_PROC_ALL call covers all of them (~18 µs per pid with KERN_PROC_PID).
+                if others == nil { others = allKinfo() }
+                guard let kp = others?[pid] else { continue }
+                let start = UInt64(kp.kp_proc.p_un.__p_starttime.tv_sec)
+                let uid = kp.kp_eproc.e_ucred.cr_uid
+                let id = identity(pid, start: start, comm: kp.kp_proc.p_comm,
+                                  names: [stringFromCTuple(kp.kp_proc.p_comm)], into: &nextIdentities)
                 rows.append(ProcessRow(
                     pid: pid,
+                    ppid: kp.kp_eproc.e_ppid,
+                    uid: uid,
+                    start: start,
                     name: id.name,
                     path: id.path,
-                    user: userName(bsd.pbi_uid),
+                    user: userName(uid),
                     threads: 0,
                     cpu: 0,
                     memory: 0,
@@ -111,9 +126,11 @@ final class ProcessReader {
 
     // MARK: Helpers
 
-    private func identity(_ pid: pid_t, bsd: proc_bsdinfo, into next: inout [pid_t: Identity]) -> Identity {
-        let start = UInt64(bsd.pbi_start_tvsec)
-        let comm = withUnsafeBytes(of: bsd.pbi_comm) {
+    /// `comm` is the kernel's 17-byte command name (pbi_comm / p_comm); `names` are display
+    /// name candidates, best first (only evaluated on a cache miss).
+    private func identity<Comm>(_ pid: pid_t, start: UInt64, comm commTuple: Comm, names: @autoclosure () -> [String],
+                                into next: inout [pid_t: Identity]) -> Identity {
+        let comm = withUnsafeBytes(of: commTuple) {
             ($0.loadUnaligned(as: UInt64.self), $0.loadUnaligned(fromByteOffset: 8, as: UInt64.self))
         }
         if let cached = identityCache[pid], cached.start == start, cached.comm == comm {
@@ -124,20 +141,43 @@ final class ProcessReader {
         let path = len > 0
             ? String(decoding: pathBuffer[0..<len].map { UInt8(bitPattern: $0) }, as: UTF8.self)
             : ""
-        let id = Identity(start: start, comm: comm, name: name(bsd: bsd, path: path), path: path)
+        let id = Identity(start: start, comm: comm, name: displayName(names(), path: path), path: path)
         next[pid] = id
         return id
     }
 
-    private func name(bsd: proc_bsdinfo, path: String) -> String {
+    private func displayName(_ candidates: [String], path: String) -> String {
         let file = (path as NSString).lastPathComponent
-        for candidate in [stringFromCTuple(bsd.pbi_name), stringFromCTuple(bsd.pbi_comm)] where !candidate.isEmpty {
+        for candidate in candidates where !candidate.isEmpty {
             // The kernel cuts names at 31 (pbi_name) / 16 (pbi_comm) bytes; prefer the
             // executable's file name when it is the untruncated version.
             if candidate.utf8.count >= 15, file.count > candidate.count, file.hasPrefix(candidate) { return file }
             return candidate
         }
         return file
+    }
+
+    /// Every process's kinfo_proc in one sysctl, keyed by pid.
+    private func allKinfo() -> [pid_t: kinfo_proc] {
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_ALL]
+        let stride = MemoryLayout<kinfo_proc>.stride
+        for _ in 0..<3 {   // the process count can grow between the size query and the read
+            var size = 0
+            guard sysctl(&mib, 3, nil, &size, nil, 0) == 0 else { return [:] }
+            let capacity = size / stride + 64
+            if kinfoBuffer.count < capacity { kinfoBuffer = [kinfo_proc](repeating: kinfo_proc(), count: capacity) }
+            size = kinfoBuffer.count * stride
+            let rc = kinfoBuffer.withUnsafeMutableBytes { sysctl(&mib, 3, $0.baseAddress, &size, nil, 0) }
+            if rc == 0 {
+                let count = size / stride
+                var result: [pid_t: kinfo_proc] = [:]
+                result.reserveCapacity(count)
+                for kp in kinfoBuffer.prefix(count) { result[kp.kp_proc.p_pid] = kp }
+                return result
+            }
+            guard errno == ENOMEM else { return [:] }
+        }
+        return [:]
     }
 
     private func userName(_ uid: uid_t) -> String {
