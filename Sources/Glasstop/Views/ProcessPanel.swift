@@ -9,6 +9,10 @@ struct ProcessPanel: View {
     @AppStorage("processHideIdle") private var hideIdle = false
     @AppStorage("processTree") private var tree = false
     @AppStorage("processCPULazy") private var cpuLazy = false
+    /// Pinned processes, in pin order. Not persisted: a pid means nothing after a relaunch.
+    @State private var pins: [PinKey] = []
+    @State private var columnLayout = ColumnLayout()
+    private static let maxPins = 8
 
     private static let myUID = getuid()
 
@@ -55,9 +59,169 @@ struct ProcessPanel: View {
                 .fixedSize()
                 .help("CPU% sort like btop's \"cpu lazy\": by average CPU over each process's lifetime, so the order doesn't jump every refresh; processes using a lot of CPU right now are still pulled to the top")
         } content: {
-            ProcessTable(rows: rows, tree: tree, cpuLazy: cpuLazy)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            VStack(spacing: 0) {
+                ProcessTable(rows: rows, tree: tree, cpuLazy: cpuLazy, pinned: Set(pins),
+                             layout: columnLayout, onTogglePin: togglePin)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                if !pins.isEmpty {
+                    PinnedSection(entries: pinnedEntries, layout: columnLayout) { key in
+                        pins.removeAll { $0 == key }
+                    }
+                }
+            }
         }
+    }
+
+    /// Live rows for the pinned processes (nil once a process has exited). Ignores the filter
+    /// and view options: a pinned process stays visible.
+    private var pinnedEntries: [PinnedEntry] {
+        let pids = Set(pins.map(\.pid))
+        var live: [PinKey: ProcessRow] = [:]
+        for row in sampler.processes where pids.contains(row.pid) { live[PinKey(row)] = row }
+        return pins.map { PinnedEntry(key: $0, row: live[$0]) }
+    }
+
+    private func togglePin(_ row: ProcessRow) {
+        let key = PinKey(row)
+        if let index = pins.firstIndex(of: key) {
+            pins.remove(at: index)
+        } else if pins.count < Self.maxPins {
+            pins.append(key)
+        } else {
+            NSSound.beep()
+        }
+    }
+}
+
+// MARK: Pinned processes
+
+/// A pinned process: pid + start time, so a reused pid is never mistaken for it.
+struct PinKey: Hashable {
+    let pid: pid_t
+    let start: UInt64
+    init(_ row: ProcessRow) { pid = row.pid; start = row.start }
+}
+
+struct PinnedEntry: Equatable {
+    let key: PinKey
+    let row: ProcessRow?        // nil: the process has exited
+}
+
+/// The process table's column geometry, shared with the pinned rows so they line up with
+/// the table's columns (widths, order and auto-hidden columns included).
+final class ColumnLayout {
+    weak var table: NSTableView?
+    /// Called on main whenever the columns change.
+    var onChange: (() -> Void)?
+    func changed() { onChange?() }
+}
+
+/// "PINNED" section under the table: one row per pinned process, mirroring its live values
+/// in the table's columns, with a button to unpin.
+private struct PinnedSection: View {
+    let entries: [PinnedEntry]
+    let layout: ColumnLayout
+    let onUnpin: (PinKey) -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 6) {
+                Text("PINNED")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Rectangle().fill(Color.primary.opacity(0.15)).frame(height: 1)
+            }
+            .padding(.top, 5)
+            .padding(.bottom, 3)
+            PinnedRows(entries: entries, layout: layout, onUnpin: onUnpin)
+                .frame(height: CGFloat(entries.count) * PinnedRowsView.rowPitch)
+        }
+    }
+}
+
+private struct PinnedRows: NSViewRepresentable {
+    let entries: [PinnedEntry]
+    let layout: ColumnLayout
+    let onUnpin: (PinKey) -> Void
+
+    func makeNSView(context: Context) -> PinnedRowsView {
+        let view = PinnedRowsView()
+        layout.onChange = { [weak view] in view?.redrawAll() }
+        return view
+    }
+
+    func updateNSView(_ view: PinnedRowsView, context: Context) {
+        view.update(entries, table: layout.table, onUnpin: onUnpin)
+    }
+}
+
+/// Row views drawn with the main table's column geometry (they don't live in a table), each
+/// with a red unpin button at the end of the row. An exited process stays, dimmed, with
+/// its last values until it's unpinned.
+final class PinnedRowsView: NSView {
+    static let rowPitch: CGFloat = 19             // table row height 17 + intercell spacing 2
+    private static let buttonWidth: CGFloat = 18
+
+    private var rows: [ProcessRowView] = []
+    private var buttons: [NSButton] = []
+    private var keys: [PinKey] = []
+    private var lastSeen: [PinKey: ProcessRow] = [:]
+    private var onUnpin: ((PinKey) -> Void)?
+
+    override var isFlipped: Bool { true }
+
+    func update(_ entries: [PinnedEntry], table: NSTableView?, onUnpin: @escaping (PinKey) -> Void) {
+        self.onUnpin = onUnpin
+        while rows.count < entries.count { addRow() }
+        while rows.count > entries.count {
+            rows.removeLast().removeFromSuperview()
+            buttons.removeLast().removeFromSuperview()
+        }
+        keys = entries.map(\.key)
+        for (i, entry) in entries.enumerated() {
+            if let row = entry.row { lastSeen[entry.key] = row }
+            let view = rows[i]
+            view.table = table
+            view.striped = i % 2 == 1
+            view.exited = entry.row == nil
+            view.process = entry.row ?? lastSeen[entry.key]
+            buttons[i].toolTip = entry.row == nil ? "Exited · Unpin" : "Unpin"
+        }
+        lastSeen = lastSeen.filter { keys.contains($0.key) }
+        needsLayout = true
+    }
+
+    func redrawAll() { rows.forEach { $0.redrawContent() } }
+
+    private func addRow() {
+        let row = ProcessRowView(identifier: NSUserInterfaceItemIdentifier("pinnedRow"))
+        row.trailingReserve = Self.buttonWidth
+        addSubview(row)
+        rows.append(row)
+
+        let image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "Unpin")?
+            .withSymbolConfiguration(.init(pointSize: 11, weight: .regular))
+        let button = NSButton(image: image ?? NSImage(), target: self, action: #selector(unpin(_:)))
+        button.isBordered = false
+        button.contentTintColor = .systemRed
+        button.tag = buttons.count
+        addSubview(button)                      // above the row views
+        buttons.append(button)
+    }
+
+    override func layout() {
+        super.layout()
+        for (i, row) in rows.enumerated() {
+            let y = CGFloat(i) * Self.rowPitch
+            row.frame = NSRect(x: 0, y: y, width: bounds.width, height: Self.rowPitch)
+            buttons[i].frame = NSRect(x: bounds.width - Self.buttonWidth + 1, y: y + 1,
+                                      width: Self.buttonWidth - 4, height: Self.rowPitch - 2)
+        }
+    }
+
+    @objc private func unpin(_ sender: NSButton) {
+        guard sender.tag < keys.count else { return }
+        onUnpin?(keys[sender.tag])
     }
 }
 
@@ -70,6 +234,9 @@ struct ProcessTable: NSViewRepresentable {
     let rows: [ProcessRow]
     var tree = false
     var cpuLazy = false
+    var pinned: Set<PinKey> = []
+    var layout: ColumnLayout?
+    var onTogglePin: ((ProcessRow) -> Void)?
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -103,6 +270,9 @@ struct ProcessTable: NSViewRepresentable {
         table.dataSource = context.coordinator
         table.delegate = context.coordinator
         context.coordinator.tableView = table
+        layout?.table = table
+        table.target = context.coordinator
+        table.doubleAction = #selector(Coordinator.doubleClicked(_:))
         context.coordinator.observeColumnWidths(of: table)
         let menu = NSMenu()
         menu.delegate = context.coordinator
@@ -123,6 +293,9 @@ struct ProcessTable: NSViewRepresentable {
     func updateNSView(_ nsView: NSScrollView, context: Context) {
         context.coordinator.tree = tree
         context.coordinator.cpuLazy = cpuLazy
+        context.coordinator.pinned = pinned
+        context.coordinator.layout = layout
+        context.coordinator.onTogglePin = onTogglePin
         context.coordinator.update(rows)
     }
 
@@ -200,6 +373,9 @@ struct ProcessTable: NSViewRepresentable {
         private var depths: [Int] = []          // tree depth per row (all 0 in flat mode)
         var tree = false
         var cpuLazy = false
+        var pinned: Set<PinKey> = []
+        var layout: ColumnLayout?
+        var onTogglePin: ((ProcessRow) -> Void)?
         private var resizeObserver: NSObjectProtocol?
         private var widthObservers: [NSKeyValueObservation] = []
 
@@ -297,6 +473,7 @@ struct ProcessTable: NSViewRepresentable {
                 view.process = rows[i]
                 if forceRedraw { view.redrawContent() }
             }
+            if forceRedraw { layout?.changed() }   // pinned rows share the column geometry
         }
 
         private func restoreSelection() {
@@ -451,6 +628,12 @@ struct ProcessTable: NSViewRepresentable {
             selectedPID = i >= 0 && i < rows.count ? rows[i].pid : nil
         }
 
+        /// Double-click pins the row's process (or unpins it if it's already pinned).
+        @objc func doubleClicked(_ sender: Any?) {
+            guard let tableView, tableView.clickedRow >= 0, tableView.clickedRow < rows.count else { return }
+            onTogglePin?(rows[tableView.clickedRow])
+        }
+
         // MARK: Context menu
 
         private var menuTarget: ProcessRow?
@@ -471,6 +654,9 @@ struct ProcessTable: NSViewRepresentable {
             menu.addItem(item("Copy Path", #selector(copyPath(_:)), enabled: !p.path.isEmpty))
             menu.addItem(item("Reveal in Finder", #selector(revealInFinder(_:)), enabled: !p.path.isEmpty))
             menu.addItem(.separator())
+            menu.addItem(item(pinned.contains(PinKey(p)) ? "Unpin" : "Pin", #selector(togglePin(_:)),
+                              enabled: onTogglePin != nil))
+            menu.addItem(.separator())
             // Other users' processes can't be signalled without privileges.
             let mine = p.uid == getuid() && p.pid > 1
             menu.addItem(item("Terminate (SIGTERM)", #selector(terminate(_:)), enabled: mine))
@@ -482,6 +668,11 @@ struct ProcessTable: NSViewRepresentable {
             menuItem.target = self
             menuItem.isEnabled = enabled
             return menuItem
+        }
+
+        @objc private func togglePin(_ sender: Any?) {
+            guard let p = menuTarget else { return }
+            onTogglePin?(p)
         }
 
         @objc private func copyPID(_ sender: Any?) {
@@ -557,6 +748,16 @@ final class ProcessRowView: NSTableRowView {
     var striped = false {
         didSet { if striped != oldValue { needsDisplay = true } }
     }
+    /// Space kept clear at the row's end (pinned rows put their unpin button there).
+    var trailingReserve: CGFloat {
+        get { content.trailingReserve }
+        set { content.trailingReserve = newValue }
+    }
+    /// The process has exited (pinned rows keep showing its last values, dimmed).
+    var exited: Bool {
+        get { content.dimmed }
+        set { content.dimmed = newValue }
+    }
     private let content = RowContentView()
 
     init(identifier: NSUserInterfaceItemIdentifier) {
@@ -618,6 +819,12 @@ final class RowContentView: NSView {
     var selected = false {
         didSet { if selected != oldValue { needsDisplay = true } }
     }
+    var trailingReserve: CGFloat = 0 {
+        didSet { if trailingReserve != oldValue { needsDisplay = true } }
+    }
+    var dimmed = false {
+        didSet { if dimmed != oldValue { needsDisplay = true } }
+    }
     private static let indentPerLevel: CGFloat = 10
     private static let font = NSFont.monospacedDigitSystemFont(ofSize: 11.5, weight: .regular)
 
@@ -640,6 +847,7 @@ final class RowContentView: NSView {
 
         ctx.saveGState()
         ctx.textMatrix = CGAffineTransform(scaleX: 1, y: -1)   // flipped view
+        if dimmed { ctx.setAlpha(0.4) }
         for (index, tableColumn) in table.tableColumns.enumerated() {
             guard !tableColumn.isHidden,
                   let column = ProcessTable.Column(rawValue: tableColumn.identifier.rawValue) else { continue }
@@ -653,6 +861,8 @@ final class RowContentView: NSView {
                 width -= indent
                 text = "└ " + text
             }
+            let limit = bounds.width - trailingReserve   // last column(s) give way to it
+            if x + width > limit { width = limit - x }
             guard width > 4, x < dirtyRect.maxX, x + width > dirtyRect.minX else { continue }
             let line = TextLineCache.shared.line(text, width: width, column: column, font: Self.font)
             let lineWidth = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
@@ -754,6 +964,19 @@ struct SearchField: NSViewRepresentable {
         }
 
         @objc func changed(_ sender: NSSearchField) { update(sender.stringValue) }
+
+        /// ↓ in the filter moves into the table (selecting the first row if none is), like
+        /// Spotlight and Finder's search.
+        func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+            guard selector == #selector(NSResponder.moveDown(_:)),
+                  let window = control.window,
+                  let table = window.contentView?.firstDescendant(of: NSTableView.self),
+                  table.numberOfRows > 0 else { return false }
+            window.makeFirstResponder(table)
+            if table.selectedRow < 0 { table.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false) }
+            table.scrollRowToVisible(max(table.selectedRow, 0))
+            return true
+        }
 
         private func update(_ value: String) {
             if text.wrappedValue != value { text.wrappedValue = value }
