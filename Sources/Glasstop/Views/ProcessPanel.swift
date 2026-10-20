@@ -43,13 +43,13 @@ struct ProcessPanel: View {
             .fixedSize()
             .help("View options")
             SearchField(text: $filter, placeholder: "Filter (⌘F)", focusRequest: appState.focusFilterRequest)
-                .frame(width: 200)
+                .frame(minWidth: 90, idealWidth: 200, maxWidth: 200)   // gives way first when narrow
                 // The search bezel is translucent by design; a solid backing keeps the material
                 // (and whatever is behind the window) from showing through.
                 .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(Color(nsColor: .controlBackgroundColor))
                     .padding(1))
-            Toggle("lazy", isOn: $cpuLazy)
+            Toggle("Lazy", isOn: $cpuLazy)
                 .toggleStyle(.checkbox)
                 .font(.system(size: 11))
                 .fixedSize()
@@ -220,7 +220,8 @@ struct ProcessTable: NSViewRepresentable {
 
         /// Programmatic tables don't reliably shrink their columns with the scroll view, so the
         /// flexible columns (Name, Command) are fitted to the visible width on every resize,
-        /// keeping their current proportions.
+        /// keeping their current proportions. When the table gets too narrow for Name and Command
+        /// to stay readable, columns drop out in `hideOrder` (like btop) and return when it widens.
         func observeResizes(of clip: NSClipView) {
             resizeObserver = NotificationCenter.default.addObserver(
                 forName: NSView.frameDidChangeNotification, object: clip, queue: .main
@@ -230,10 +231,33 @@ struct ProcessTable: NSViewRepresentable {
             }
         }
 
+        private static let hideOrder: [Column] = [.command, .user, .threads, .pid]
+        private static let readableWidth: [Column: CGFloat] = [.name: 130, .command: 170]
+
         private func fitColumns(to available: CGFloat) {
             guard let tableView, available > 0 else { return }
-            let columns = tableView.tableColumns
-            let spacing = tableView.intercellSpacing.width * CGFloat(columns.count)
+            let all = tableView.tableColumns
+            let cell = tableView.intercellSpacing.width
+            func kind(_ c: NSTableColumn) -> Column? { Column(rawValue: c.identifier.rawValue) }
+            // Width needed with a set of columns hidden: fixed columns at their current width,
+            // flexible ones at their readable minimum.
+            func needed(hiding hidden: Set<Column>) -> CGFloat {
+                all.reduce(0) { sum, c in
+                    guard let k = kind(c), !hidden.contains(k) else { return sum }
+                    return sum + cell + (k.flexible ? Self.readableWidth[k] ?? c.minWidth : c.width)
+                }
+            }
+            var hidden = Set<Column>()
+            for column in Self.hideOrder where needed(hiding: hidden) > available { hidden.insert(column) }
+            var visibilityChanged = false
+            for c in all {
+                let hide = kind(c).map(hidden.contains) ?? false
+                if c.isHidden != hide { c.isHidden = hide; visibilityChanged = true }
+            }
+            defer { if visibilityChanged { refreshVisibleRows(forceRedraw: true) } }
+
+            let columns = all.filter { !$0.isHidden }
+            let spacing = cell * CGFloat(columns.count)
             let flexible = columns.filter { Column(rawValue: $0.identifier.rawValue)?.flexible == true }
             let fixed = columns.filter { !flexible.contains($0) }.reduce(0) { $0 + $1.width }
             let room = available - fixed - spacing
@@ -616,7 +640,8 @@ final class RowContentView: NSView {
         ctx.saveGState()
         ctx.textMatrix = CGAffineTransform(scaleX: 1, y: -1)   // flipped view
         for (index, tableColumn) in table.tableColumns.enumerated() {
-            guard let column = ProcessTable.Column(rawValue: tableColumn.identifier.rawValue) else { continue }
+            guard !tableColumn.isHidden,
+                  let column = ProcessTable.Column(rawValue: tableColumn.identifier.rawValue) else { continue }
             let columnRect = table.rect(ofColumn: index)
             var x = columnRect.minX + inset
             var width = columnRect.width - 2 * inset

@@ -79,6 +79,12 @@ What changed overnight, in one line each:
   30%) are moved to the front, at most 11 per refresh. Applies to descending CPU% sorts; in tree
   view only the lifetime ordering applies (same as btop). The column still shows the live CPU%.
 
+- **Responsive process table**: when the table is too narrow for Name (130 pt) and Command
+  (170 pt) to stay readable, columns drop out in btop's spirit — Command, then User, Thr, PID —
+  and come back as it widens. The filter field shrinks (200 → 90 pt) before the title row can
+  overflow onto the column headers. Verified at 1040×720 (PID, Name, Memory, CPU%, GPU%) and
+  1200×720 (+ Thr, User).
+
 ## Decisions to review
 - **CPU budget "< 1% of one core at 0.5 s" isn't reachable with this design.** Sampling alone is
   ~1.1–1.3%; redrawing ~100 changing labels + graphs at 2 Hz costs ~3–3.5% more while visible.
