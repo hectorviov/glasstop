@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Reliability soak (PLAN.md M7). Launches build/Glasstop.app with stderr captured, then every
 # INTERVAL minutes for HOURS hours appends a CSV row: footprint, average CPU, leak count (every
-# 3rd row; `leaks` briefly suspends the app) and sampler stalls logged so far.
+# 3rd row) and sampler stalls logged so far (excluding the ones caused by `leaks` itself, which
+# suspends the app while scanning).
 #
 # Usage: scripts/soak.sh [hours=24] [interval_min=30]
 # Output: soak/soak-<timestamp>.csv and soak/stderr-<timestamp>.log
@@ -33,9 +34,15 @@ for ((i = 0; i <= rows; i++)); do
               | awk '{ s += $1 } END { if (NR) printf "%.2f", s / NR }')
         lk=""
         if (( i % 3 == 0 )); then
+            # `leaks` suspends the app while it scans memory (several seconds), which the app
+            # logs as a sampler stall. Those are excluded from the count.
+            before=$(grep -c "sampler stall" "$ERR" 2>/dev/null || true)
             lk=$(leaks "$PID" 2>/dev/null | sed -nE 's/.*: ([0-9]+) leaks for.*/\1/p')
+            sleep 3
+            after=$(grep -c "sampler stall" "$ERR" 2>/dev/null || true)
+            leak_stalls=$(( ${leak_stalls:-0} + after - before ))
         fi
-        stalls=$(grep -c "sampler stall" "$ERR" 2>/dev/null || true)
+        stalls=$(( $(grep -c "sampler stall" "$ERR" 2>/dev/null || true) - ${leak_stalls:-0} ))
         echo "$now,$PID,$fp,$cpu,$lk,$stalls" >> "$CSV"
     else
         echo "$now,,,,,not running" >> "$CSV"
