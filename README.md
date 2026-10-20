@@ -22,7 +22,7 @@ window, right-click for options. Closing the window hides it; quit from the menu
 | ⌘T | Keep on top (all Spaces, incl. fullscreen apps) |
 | ⌘1 / ⌘2 | Full / compact mode (each remembers its own size) |
 | ⌘F | Focus the process filter |
-| − / + (header) | Refresh interval in 10 ms steps (hold to repeat, ⌥-click for 100 ms), 100 ms–5 s |
+| − / + (header) | Refresh interval in 100 ms steps (hold to repeat, ⌥-click for 1 s), 100 ms–5 s, default 1000 ms |
 | ⌘, | Settings (refresh interval, history length, process refresh, launch at login, hotkey) |
 | ⌃⌥⌘M | Show/hide from anywhere (optional global hotkey, off by default) |
 

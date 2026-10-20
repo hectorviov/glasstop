@@ -24,7 +24,7 @@ struct SettingsView: View {
                 Picker("Process list refresh", selection: binding(\.processInterval)) {
                     ForEach(SamplerSettings.processIntervals, id: \.self) { Text(seconds($0)).tag($0) }
                 }
-                Text("10 ms steps (also the − / + arrows in the header). Faster refresh costs more CPU; 500 ms and 1 s are the defaults.")
+                Text("100 ms steps (also the − / + arrows in the header). Faster refresh costs more CPU; 1 s is the default for both.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

@@ -8,25 +8,25 @@ struct SamplerSettings: Equatable {
 
     /// Refresh interval range and step (the header's − / + arrows, like btop's).
     static let intervalRange: ClosedRange<TimeInterval> = 0.1...5
-    static let intervalStep: TimeInterval = 0.01
+    static let intervalStep: TimeInterval = 0.1
     static let historyLengths = [60, 120, 300, 600]
     static let processIntervals: [TimeInterval] = [0.5, 1, 2, 5]
     /// Upper bound on points per history buffer, whatever the combination (memory stays flat).
     static let maxHistoryPoints = 2400
 
-    static let `default` = SamplerSettings(interval: 0.5, historySeconds: 120, processInterval: 1)
+    static let `default` = SamplerSettings(interval: 1, historySeconds: 120, processInterval: 1)
 
     var historyCapacity: Int { min(max(Int((Double(historySeconds) / interval).rounded()), 2), Self.maxHistoryPoints) }
     /// Processes are sampled on every Nth tick (never more often than the tick itself).
     var processEveryNTicks: Int { max(1, Int((processInterval / interval).rounded())) }
 
-    /// Clamped to `intervalRange` and snapped to 10 ms (avoids 0.30000000000000004).
+    /// Clamped to `intervalRange` and snapped to 100 ms (avoids 0.30000000000000004).
     static func normalized(_ interval: TimeInterval) -> TimeInterval {
         let clamped = min(max(interval, intervalRange.lowerBound), intervalRange.upperBound)
         return (clamped / intervalStep).rounded() * intervalStep
     }
 
-    /// `steps` × 10 ms faster (negative) or slower (positive).
+    /// `steps` × 100 ms faster (negative) or slower (positive).
     func steppingInterval(by steps: Int) -> SamplerSettings {
         var s = self
         s.interval = Self.normalized(interval + Double(steps) * Self.intervalStep)

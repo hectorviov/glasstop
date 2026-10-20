@@ -29,7 +29,7 @@ struct HeaderBar: View {
     }
 }
 
-/// btop-style "− 500ms +": 10 ms per click, repeats while held, ⌥-click for 100 ms.
+/// btop-style "− 1000ms +": 100 ms per click, repeats while held, ⌥-click for 1 s.
 private struct RefreshControl: View {
     @Environment(AppState.self) private var appState
 
@@ -45,7 +45,7 @@ private struct RefreshControl: View {
         .padding(.horizontal, 4)
         .padding(.vertical, 1)
         .background(Capsule().fill(Color.primary.opacity(0.06)))
-        .help("Refresh interval: 10 ms per click, hold to repeat, ⌥-click for 100 ms")
+        .help("Refresh interval: 100 ms per click, hold to repeat, ⌥-click for 1 s")
     }
 
     private func arrow(_ symbol: String, steps: Int, enabled: Bool) -> some View {

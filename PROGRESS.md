@@ -35,9 +35,10 @@ What changed overnight, in one line each:
 - **Mirrored GPU graph** like btop: the CPU box's big graph splits into CPU (up) and GPU
   utilization (hanging down) with "▲ cpu · ▼ gpu" between them; GPU is sampled every tick now
   (~0.2 ms) so both share the time axis.
-- **Refresh arrows** "− 500ms +" in the header: 10 ms steps, hold to repeat, ⌥-click = 100 ms;
-  range 100 ms – 5 s (Settings uses the same stepper). Verified 500 → 530 → 520 → 500 ms, saved
-  exactly (no float drift).
+- **Refresh arrows** "− 1000ms +" in the header: 100 ms steps (your follow-up; first version used
+  10 ms), hold to repeat, ⌥-click = 1 s; range 100 ms – 5 s (Settings uses the same stepper).
+  **Default refresh is now 1000 ms** (was 500 ms) — measured ~3.4% CPU vs ~4.9% at 500 ms.
+  Verified 1000 → 1100 → 1000 ms, saved exactly.
 
 ## Decisions to review
 - **CPU budget "< 1% of one core at 0.5 s" isn't reachable with this design.** Sampling alone is
@@ -51,8 +52,8 @@ What changed overnight, in one line each:
   | 1 s / 1 s | 3.4% | 52 MB |
   | 1 s / 2 s | 2.8% | 50 MB |
 
-  Hidden/minimized/covered: ~1.3% at any setting (SwiftUI isn't updated at all). I kept
-  0.5 s / 1 s as defaults (the plan and your btop setup); change them in Settings.
+  Hidden/minimized/covered: ~1.3% at any setting (SwiftUI isn't updated at all). Defaults are now
+  1 s / 1 s (your call, 2026-10-20); change them with the header arrows or in Settings.
 - **Accessory app (no Dock icon / ⌘Tab)** — required for floating over fullscreen apps. The menu
   bar item is therefore always present (it's the way back from click-through/hidden). Closing the
   window hides it; quit from the menu bar item or ⌘Q.
@@ -72,7 +73,9 @@ What changed overnight, in one line each:
 **Run 1** (build 475352d): 23:44 → 07:09, 7.4 h continuous, 16 samples: footprint 54–64 MB with no
 upward trend, CPU 5.4–5.9%, leaks flat at 414 (Apple App Intents), **0 stalls**. Ended early at
 your request to relaunch on the build with the mirrored GPU graph and refresh arrows.
-**Run 2** (build 68dbb37) started 07:10 → `soak/soak-20261020-0710.csv`. First sample: 69 MB
+**Run 2** (build 68dbb37) ran 07:10–07:14 (1 sample: 69 MB, 5.71%, 0 stalls), replaced by
+**Run 3** (100 ms steps, 1000 ms default) → `soak/soak-20261020-07*.csv`.
+Run 2 detail: started 07:10 → `soak/soak-20261020-0710.csv`. First sample: 69 MB
 (bigger window now, plus GPU history), 5.71% CPU, leaks 417 (same three Apple cycles), 0 stalls.
 
 `scripts/soak.sh 24 30` logs footprint, CPU, leaks (every 3rd row) and stalls every 30 min.
