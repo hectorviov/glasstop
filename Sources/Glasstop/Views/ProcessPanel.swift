@@ -722,6 +722,31 @@ final class OverlayScrollView: NSScrollView {
     var topAccessoryHeight: CGFloat = 0 {
         didSet { if topAccessoryHeight != oldValue { tile() } }
     }
+    private var overridingInsets = false
+
+    /// Back to the standard layout once the strip is gone: the clip view runs under the header
+    /// again with a top inset for it. Only setting `automaticallyAdjustsContentInsets` back
+    /// left the inset at 0 until the next tile, so the first row sat behind the header.
+    private func restoreHeaderInset() {
+        guard overridingInsets else { return }
+        overridingInsets = false
+        contentView.automaticallyAdjustsContentInsets = true
+        super.tile()
+        let headerHeight = (documentView as? NSTableView)?.headerView?.frame.height ?? 0
+        if contentView.contentInsets.top < headerHeight {
+            contentView.contentInsets = NSEdgeInsets(top: headerHeight, left: 0, bottom: 0, right: 0)
+        }
+        shiftScroll(by: -contentView.contentInsets.top)   // keep the same rows in view
+    }
+
+    /// Moves the scroll position by `dy` (the clip view is flipped: positive is down) when the
+    /// top inset changes, so the rows that were visible stay put.
+    private func shiftScroll(by dy: CGFloat) {
+        var bounds = contentView.bounds
+        bounds.origin.y += dy
+        contentView.scroll(to: contentView.constrainBoundsRect(bounds).origin)
+        reflectScrolledClipView(contentView)
+    }
 
     override func tile() {
         super.tile()
@@ -729,7 +754,7 @@ final class OverlayScrollView: NSScrollView {
         let height = topAccessoryHeight
         topAccessory.isHidden = height == 0
         guard height > 0 else {
-            contentView.automaticallyAdjustsContentInsets = true
+            restoreHeaderInset()
             return
         }
         // Normally the clip view runs under the header with a top inset for it, so rows can
@@ -747,10 +772,10 @@ final class OverlayScrollView: NSScrollView {
         }
         contentView.frame = clip
         contentView.automaticallyAdjustsContentInsets = false
+        overridingInsets = true
         if contentView.contentInsets.top != 0 {
             contentView.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
-            contentView.scroll(to: contentView.constrainBoundsRect(contentView.bounds).origin)
-            reflectScrolledClipView(contentView)
+            shiftScroll(by: 0)           // just re-clamp: the old top position maps onto the new one
         }
         if let scroller = verticalScroller, !scroller.isHidden {
             var frame = scroller.frame
