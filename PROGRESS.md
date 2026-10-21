@@ -88,6 +88,12 @@ What changed overnight, in one line each:
 - **Stale badge false alarm fixed**: while the window was covered, the header could show
   "stalled Ns" because publishing pauses then; it now checks when ticks actually arrive.
 
+- **Pinned processes** (your request): double-click a row or right-click → Pin. A PINNED strip
+  at the top of the table (below the header, outside the scrolled rows) mirrors each pinned process's live row in the table's columns (shared column
+  geometry: widths, order and auto-hidden columns follow the table), with a red × at the row's
+  end to unpin. **Focus fix:** Esc in an empty filter (and ↓) now focuses the table, so the
+  selection is blue and arrow keys work; before, focus went nowhere and the selection went grey.
+
 ## Decisions to review
 - **CPU budget "< 1% of one core at 0.5 s" isn't reachable with this design.** Sampling alone is
   ~1.1–1.3%; redrawing ~100 changing labels + graphs at 2 Hz costs ~3–3.5% more while visible.
@@ -112,6 +118,10 @@ What changed overnight, in one line each:
   no reliable sensor→core mapping. HID `PMU tdie*` is the fallback (0.75 ms/sensor, 5× slower).
 - **App Nap opt-out** (`userInitiatedAllowingIdleSystemSleep`) so a covered window doesn't
   throttle sampling (graphs would skip samples). The system can still idle-sleep.
+- **Pins**: a strip under the column header, above the live rows (your call: top); keyed by pid + start
+  time, not persisted across launches (a pid means nothing after a relaunch); at most 8; an
+  exited process stays dimmed with its last values until unpinned; pinned rows ignore the
+  filter and view options.
 - **Global hotkey** default off; combination ⌃⌥⌘G (Carbon `RegisterEventHotKey`, no permission).
 - **Version 0.9.0** (not 1.0) until the soak and your review are done.
 - **Leaks**: `leaks` reports ~414 "leaks" (~20 KB), all three copies of one Apple App Intents XPC

@@ -49,7 +49,11 @@ mouse; click the Dock icon to turn it off). Process table: right-click for Copy 
 Terminate / Force Kill; click GPU% to sort by GPU use; the **Lazy** checkbox
 next to the filter makes the CPU% sort work like btop's "cpu lazy" (by each process's lifetime
 average CPU, with processes busy right now pulled to the top), so rows don't reshuffle every
-refresh; the filter button has only-my-processes, hide-idle and tree view.
+refresh; the filter button has only-my-processes, hide-idle and tree view. **Double-click** a
+row (or right-click → Pin) to pin it to the **PINNED** strip at the top of the table, where it
+keeps its place while the list sorts and scrolls and shows the process's live values; the red ×
+unpins it. A pinned process that exits
+stays there, dimmed, until you unpin it. Esc in the filter (or ↓) moves focus back to the table.
 Filter text, sort order and column layout persist. The net panel's title is a dropdown: all
 Wi-Fi/Ethernet adapters (default) or one interface (adapters by name, plus VPN tunnels and VM
 bridges).

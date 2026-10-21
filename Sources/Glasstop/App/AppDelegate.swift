@@ -272,11 +272,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
 /// NSPanel closes itself on Esc (`cancelOperation`), which hid Glasstop. Here Esc only ends
 /// editing: the search field clears its text on the first Esc (standard), and an Esc on an
-/// empty field reaches the panel, which removes focus from it. The window never closes on Esc.
+/// empty field reaches the panel, which hands focus to the process table (with no first
+/// responder the selection turned inactive grey and arrow keys did nothing). The window never
+/// closes on Esc.
 final class GlasstopPanel: NSPanel {
     override func cancelOperation(_ sender: Any?) {
         if firstResponder is NSText {      // the field editor of the focused text/search field
-            makeFirstResponder(nil)
+            makeFirstResponder(contentView?.firstDescendant(of: NSTableView.self))
         }
+    }
+}
+
+extension NSView {
+    /// Depth-first search of the view tree.
+    func firstDescendant<T: NSView>(of type: T.Type) -> T? {
+        for subview in subviews {
+            if let match = subview as? T ?? subview.firstDescendant(of: type) { return match }
+        }
+        return nil
     }
 }
