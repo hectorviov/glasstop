@@ -78,7 +78,10 @@ The **Release** workflow builds `Glasstop.app` stamped with that version, packs 
 drag-to-Applications disk image (`scripts/make-dmg.sh`, layout in `scripts/dmg-settings.py`)
 with a SHA-256 checksum and publishes a GitHub release with notes generated from the merged pull requests.
 A tag with a suffix (`v1.0.0-beta.1`) becomes a pre-release. Running the workflow by hand
-(Actions → Release → Run workflow) makes a draft release instead, which only you can see.
+(Actions → Release → Run workflow) makes a draft release instead, which only you can see; check
+it, then click **Publish release**. Publishing creates the tag, and the tag's run sees the release
+already has its disk image and skips the build. A release drafted on GitHub's own form (no files)
+works too: when you publish it, the tag's run builds, notarizes and attaches the DMG.
 
 ### Signing and notarization
 

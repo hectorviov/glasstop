@@ -37,6 +37,7 @@ jobs:
         id: version
         env:
           INPUT_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
             version="${GITHUB_REF_NAME#v}"; draft=""
@@ -47,14 +48,24 @@ jobs:
             echo "::error::'$version' isn't a version like 1.2.3 or 1.2.3-beta.1"; exit 1
           fi
           prerelease=""; [[ "$version" == *-* ]] && prerelease="--prerelease"
+          # Publishing a draft creates its tag, which starts this workflow again. If that
+          # release already carries its disk image (a draft made by "Run workflow"), there's
+          # nothing to do. A release drafted on GitHub without files gets the build attached.
+          skip=false
+          if [[ "$GITHUB_EVENT_NAME" == "push" ]] && gh release view "v$version" -R "$GITHUB_REPOSITORY" \
+              --json assets --jq '.assets[].name' 2>/dev/null | grep -qx "Glasstop-$version.dmg"; then
+            echo "::notice::Release v$version already has Glasstop-$version.dmg; nothing to do."
+            skip=true
+          fi
           {
+            echo "skip=$skip"
             echo "version=$version"
             echo "draft=$draft"
             echo "prerelease=$prerelease"
           } >> "$GITHUB_OUTPUT"
 
       - name: Signing keychain
-        if: env.SIGNED == 'true'
+        if: env.SIGNED == 'true' && steps.version.outputs.skip != 'true'
         env:
           MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
           MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
@@ -96,6 +107,7 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Build
+        if: steps.version.outputs.skip != 'true'
         env:
           VERSION: ${{ steps.version.outputs.version }}
           BUILD_NUMBER: ${{ github.run_number }}
@@ -108,7 +120,7 @@ jobs:
           [[ "$archs" == "arm64" ]] || { echo "::error::expected an arm64 binary, got '$archs'"; exit 1; }
 
       - name: Notarize app
-        if: env.SIGNED == 'true'
+        if: env.SIGNED == 'true' && steps.version.outputs.skip != 'true'
         run: |
           ditto -c -k --keepParent build/Glasstop.app "$RUNNER_TEMP/Glasstop-notarize.zip"
           ./scripts/notarize.sh "$RUNNER_TEMP/Glasstop-notarize.zip"
@@ -116,6 +128,7 @@ jobs:
           spctl --assess --type execute --verbose=2 build/Glasstop.app
 
       - name: Disk image
+        if: steps.version.outputs.skip != 'true'
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
@@ -125,7 +138,7 @@ jobs:
           ./scripts/make-dmg.sh "Glasstop-$VERSION.dmg"
 
       - name: Notarize disk image
-        if: env.SIGNED == 'true'
+        if: env.SIGNED == 'true' && steps.version.outputs.skip != 'true'
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
@@ -133,6 +146,7 @@ jobs:
           spctl --assess --type open --context context:primary-signature --verbose=2 "Glasstop-$VERSION.dmg"
 
       - name: Publish
+        if: steps.version.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
@@ -154,9 +168,15 @@ jobs:
           (or run `xattr -dr com.apple.quarantine /Applications/Glasstop.app`).
           EOF
           fi
-          gh release create "v$VERSION" "$dmg" "$dmg.sha256" \
-            --title "Glasstop $VERSION" --target "$GITHUB_SHA" \
-            --notes-file notes.md --generate-notes $DRAFT $PRERELEASE
+          if gh release view "v$VERSION" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            # Drafted (or published) on GitHub without files: attach the build, keep its notes.
+            gh release upload "v$VERSION" "$dmg" "$dmg.sha256" --clobber -R "$GITHUB_REPOSITORY"
+            echo "::notice::Attached $dmg to the existing release v$VERSION"
+          else
+            gh release create "v$VERSION" "$dmg" "$dmg.sha256" \
+              --title "Glasstop $VERSION" --target "$GITHUB_SHA" \
+              --notes-file notes.md --generate-notes $DRAFT $PRERELEASE
+          fi
 
       - name: Clean up signing material
         if: always()
